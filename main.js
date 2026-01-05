@@ -2542,6 +2542,7 @@ var DashReaderView = class extends import_obsidian2.ItemView {
    * Builds UI, sets up hotkeys, and registers auto-load
    */
   async onOpen() {
+    await Promise.resolve();
     this.mainContainerEl = this.contentEl.createDiv({ cls: CSS_CLASSES.container });
     this.buildUI();
     this.breadcrumbManager = new BreadcrumbManager(this.breadcrumbEl, this.engine, this.timeoutManager);
@@ -2573,6 +2574,7 @@ var DashReaderView = class extends import_obsidian2.ItemView {
    * Stops reading and cleans up resources
    */
   async onClose() {
+    await Promise.resolve();
     this.engine.stop();
     this.timeoutManager.clearAll();
     this.dom.clear();
@@ -3259,8 +3261,8 @@ var DashReaderSettingTab = class extends import_obsidian3.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian3.Setting(containerEl).setName("Dashreader settings").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Reading settings").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Speed reader").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Reading").setHeading();
     const wpmSetting = new import_obsidian3.Setting(containerEl).setName("Words per minute").setDesc("Reading speed (50-5000)");
     this.createSliderWithInput(
       wpmSetting,
@@ -3506,7 +3508,7 @@ var DashReaderSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       }
     );
-    new import_obsidian3.Setting(containerEl).setName("Display options").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Display").setHeading();
     new import_obsidian3.Setting(containerEl).setName("Show progress bar").setDesc("Display reading progress bar").addToggle((toggle) => toggle.setValue(this.plugin.settings.showProgress).onChange(async (value) => {
       this.plugin.settings.showProgress = value;
       await this.plugin.saveSettings();

@@ -246,6 +246,8 @@ export class DashReaderView extends ItemView {
    * Builds UI, sets up hotkeys, and registers auto-load
    */
   async onOpen(): Promise<void> {
+    // Note: async required by Obsidian's ItemView interface
+    await Promise.resolve();
     this.mainContainerEl = this.contentEl.createDiv({ cls: CSS_CLASSES.container });
     this.buildUI();
 
@@ -287,6 +289,8 @@ export class DashReaderView extends ItemView {
    * Stops reading and cleans up resources
    */
   async onClose(): Promise<void> {
+    // Note: async required by Obsidian's ItemView interface
+    await Promise.resolve();
     this.engine.stop();
     this.timeoutManager.clearAll();
     this.dom.clear();

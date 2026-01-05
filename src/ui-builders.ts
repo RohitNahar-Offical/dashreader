@@ -113,19 +113,6 @@ export interface ToggleControlConfig {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Conditional Group Configuration (Legacy)
-// ──────────────────────────────────────────────────────────────────────
-
-/**
- * Configuration for conditional visibility groups
- * @deprecated Use direct style.display manipulation instead
- */
-export interface ConditionalGroupConfig {
-  condition: boolean;
-  groups: HTMLElement[];
-}
-
-// ──────────────────────────────────────────────────────────────────────
 // Slider Configuration
 // ──────────────────────────────────────────────────────────────────────
 
@@ -717,27 +704,6 @@ export function togglePanel(
   const newState = !currentState;
   panel.toggleClass(CSS_CLASSES.hidden, !newState);
   return newState;
-}
-
-/**
- * Creates a conditional group that can be shown/hidden
- *
- * @deprecated Use direct toggleClass manipulation instead. This function
- * adds unnecessary abstraction.
- *
- * Used for acceleration settings that appear when acceleration is enabled.
- *
- * @param parent - Parent element
- * @param config - Configuration with condition and groups
- * @returns Container element
- */
-export function createConditionalGroup(
-  parent: HTMLElement,
-  config: ConditionalGroupConfig
-): HTMLElement {
-  const container = parent.createDiv({ cls: CSS_CLASSES.settingGroup });
-  container.toggleClass(CSS_CLASSES.hidden, !config.condition);
-  return container;
 }
 
 /**

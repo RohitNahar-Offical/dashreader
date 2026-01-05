@@ -4,7 +4,7 @@ import js from "@eslint/js";
 
 export default [
   {
-    ignores: ["main.js", "*.mjs", "node_modules/**"]
+    ignores: ["main.js", "*.mjs", "eslint.config.js", "node_modules/**"]
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

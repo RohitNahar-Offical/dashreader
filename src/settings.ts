@@ -75,10 +75,10 @@ export class DashReaderSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName("Dashreader settings").setHeading();
+    new Setting(containerEl).setName("Speed reader").setHeading();
 
     // Section: Lecture
-    new Setting(containerEl).setName("Reading settings").setHeading();
+    new Setting(containerEl).setName("Reading").setHeading();
 
     const wpmSetting = new Setting(containerEl)
       .setName('Words per minute')
@@ -426,7 +426,7 @@ export class DashReaderSettingTab extends PluginSettingTab {
     );
 
     // Section: Display
-    new Setting(containerEl).setName("Display options").setHeading();
+    new Setting(containerEl).setName("Display").setHeading();
 
     new Setting(containerEl)
       .setName('Show progress bar')
