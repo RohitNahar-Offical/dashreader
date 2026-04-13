@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, Notice, MarkdownView, Menu, Editor } from 'obsidian';
+import { Plugin, WorkspaceLeaf, Notice, MarkdownView, Menu, Editor, MenuItem } from 'obsidian';
 import { DashReaderView, VIEW_TYPE_DASHREADER } from './src/rsvp-view';
 import { DashReaderSettingTab } from './src/settings';
 import { DashReaderSettings } from './src/types';
@@ -10,13 +10,13 @@ export default class DashReaderPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
 
-    // Enregistrer la vue
+    // Register the view
     this.registerView(
       VIEW_TYPE_DASHREADER,
-      (leaf) => new DashReaderView(leaf, this.settings)
+      (leaf: WorkspaceLeaf) => new DashReaderView(leaf, this.settings)
     );
 
-    // Ajouter l'icône dans la ribbon
+    // Add ribbon icon
     this.addRibbonIcon('zap', 'Open speed reader', () => {
       void this.activateView();
     });
@@ -34,15 +34,14 @@ export default class DashReaderPlugin extends Plugin {
     this.addCommand({
       id: 'read-selection',
       name: 'Read selected text',
-      editorCallback: (editor: Editor) => {
+      editorCallback: async (editor: Editor) => {
         const selection = editor.getSelection();
         if (selection) {
-          void this.activateView().then(() => {
-            const view = this.getView();
-            if (view) {
-              view.loadText(selection);
-            }
-          });
+          const leaf = await this.activateView();
+          if (leaf) {
+            const view = leaf.view as DashReaderView;
+            view.loadText(selection);
+          }
         } else {
           new Notice('Please select some text first');
         }
@@ -53,16 +52,15 @@ export default class DashReaderPlugin extends Plugin {
     this.addCommand({
       id: 'read-note',
       name: 'Read entire note',
-      callback: () => {
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+      callback: async () => {
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView) as MarkdownView | null;
         if (activeView) {
           const content = activeView.editor.getValue();
-          void this.activateView().then(() => {
-            const view = this.getView();
-            if (view) {
-              view.loadText(content);
-            }
-          });
+          const leaf = await this.activateView();
+          if (leaf) {
+            const view = leaf.view as DashReaderView;
+            view.loadText(content);
+          }
         } else {
           new Notice('No active note found');
         }
@@ -79,32 +77,44 @@ export default class DashReaderPlugin extends Plugin {
       }
     });
 
+    // Command: Stop All
+    this.addCommand({
+      id: 'stop-all',
+      name: 'Stop speed reader',
+      callback: () => {
+        const view = this.getView();
+        if (view) {
+          view.stop();
+          new Notice('Reading stopped');
+        }
+      }
+    });
+
     // Context menu
     this.registerEvent(
       this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor) => {
         const selection = editor.getSelection();
         if (selection) {
-          menu.addItem((item) => {
+          menu.addItem((item: MenuItem) => {
             item
               .setTitle('Read with speed reader')
               .setIcon('zap')
-              .onClick(() => {
-                void this.activateView().then(() => {
-                  const view = this.getView();
-                  if (view) {
-                    view.loadText(selection);
-                  }
-                });
+              .onClick(async () => {
+                const leaf = await this.activateView();
+                if (leaf) {
+                  const view = leaf.view as DashReaderView;
+                  view.loadText(selection);
+                }
               });
           });
         }
       })
     );
 
-    // Onglet de paramètres
+    // Settings tab
     this.addSettingTab(new DashReaderSettingTab(this.app, this));
 
-    // Mettre à jour la vue quand les paramètres changent
+    // Update view when settings change
     this.registerEvent(
       this.app.workspace.on('layout-change', () => {
         const view = this.getView();
@@ -134,24 +144,24 @@ export default class DashReaderPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
-    // Mettre à jour la vue si elle existe
+    // Update view if it exists
     const view = this.getView();
     if (view) {
       view.updateSettings(this.settings);
     }
   }
 
-  async activateView() {
+  async activateView(): Promise<WorkspaceLeaf | null> {
     const { workspace } = this.app;
 
     let leaf: WorkspaceLeaf | null = null;
     const leaves = workspace.getLeavesOfType(VIEW_TYPE_DASHREADER);
 
     if (leaves.length > 0) {
-      // Une vue existe déjà, l'utiliser
+      // View already exists, use it
       leaf = leaves[0];
     } else {
-      // Créer une nouvelle vue dans le panneau de droite
+      // Create new view in right panel
       leaf = workspace.getRightLeaf(false);
       if (leaf) {
         await leaf.setViewState({
@@ -162,7 +172,8 @@ export default class DashReaderPlugin extends Plugin {
     }
 
     if (leaf) {
-      void workspace.revealLeaf(leaf);
+      await workspace.revealLeaf(leaf);
     }
+    return leaf;
   }
 }

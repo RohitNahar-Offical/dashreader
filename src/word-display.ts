@@ -112,41 +112,62 @@ export class WordDisplay {
 
   /**
    * Adds a processed word to the container using DOM API
-   * This prevents XSS attacks by never using innerHTML with user content
+   * Implements "Optimal Recognition Point" (ORP) alignment for maximum focus
    *
    * @param container - Container element to add word to
    * @param rawWord - Raw word (may contain special characters)
    */
   private addProcessedWord(container: HTMLElement, rawWord: string): void {
-    // Special case: line breaks (don't highlight, just display)
+    // Special case: line breaks
     if (rawWord === '\n') {
       container.createEl('br');
       return;
     }
 
-    // Remove heading and callout markers (already processed by engine)
+    // Remove markers
     const word = rawWord.replace(/^\[H\d\]/, '').replace(/^\[CALLOUT:[\w-]+\]/, '');
 
-    // Apply center character highlighting (always enabled)
     if (word.length > 0) {
-      const centerIndex = Math.floor(word.length / 3);
-      const before = word.substring(0, centerIndex);
-      const center = word.charAt(centerIndex);
-      const after = word.substring(centerIndex + 1);
+      // Add visual anchor lines (top and bottom ticks)
+      container.createDiv({ cls: 'dashreader-anchor-line dashreader-anchor-top' });
+      container.createDiv({ cls: 'dashreader-anchor-line dashreader-anchor-bottom' });
 
-      // Build using DOM API to prevent XSS
-      if (before) {
-        container.createSpan({ text: before });
-      }
-      container.createSpan({
+      // Create ORP container
+      const orpContainer = container.createDiv({ cls: 'dashreader-word-orp-container' });
+
+      // Calculate the Optimal Recognition Point (ORP)
+      // Usually the 2nd letter for short words, 3rd or 4th for long words
+      let orpIndex = 0;
+      if (word.length <= 4) orpIndex = 1;
+      else if (word.length <= 8) orpIndex = 2;
+      else orpIndex = 3;
+
+      // Ensure index is within bounds
+      orpIndex = Math.min(orpIndex, word.length - 1);
+
+      const before = word.substring(0, orpIndex);
+      const center = word.charAt(orpIndex);
+      const after = word.substring(orpIndex + 1);
+
+      // Build the aligned word parts
+      // Left part (aligned right)
+      const leftSpan = orpContainer.createSpan({ cls: 'dashreader-word-part dashreader-word-left' });
+      leftSpan.setText(before);
+
+      // Center part (the anchor point)
+      const centerSpan = orpContainer.createSpan({
         text: center,
-        cls: 'dashreader-highlight'
+        cls: 'dashreader-word-part dashreader-word-center dashreader-highlight'
       });
-      if (after) {
-        container.createSpan({ text: after });
+      // Allow user setting for highlight color to override
+      if (this.settings.highlightColor) {
+        centerSpan.style.color = this.settings.highlightColor;
       }
+
+      // Right part (aligned left)
+      const rightSpan = orpContainer.createSpan({ cls: 'dashreader-word-part dashreader-word-right' });
+      rightSpan.setText(after);
     } else {
-      // Empty word, just add as text
       container.setText(word);
     }
   }

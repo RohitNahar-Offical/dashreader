@@ -1,7 +1,7 @@
 {
   "name": "dashreader",
-  "version": "1.0.0",
-  "description": "Plugin Obsidian pour la lecture rapide RSVP",
+  "version": "1.4.3",
+  "description": "Speed reading with RSVP (Rapid Serial Visual Presentation) - Read faster, understand better.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

@@ -212,7 +212,7 @@ export function extractEditorContent(
   cursorPosition?: number;
   lineNumber?: number;
 } {
-  const activeView = app.workspace.getActiveViewOfType(MarkdownView);
+  const activeView = app.workspace.getActiveViewOfType(MarkdownView) as MarkdownView | null;
   if (!activeView) {
     return { activeView: null, currentFile: null };
   }

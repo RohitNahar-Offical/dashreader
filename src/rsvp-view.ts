@@ -51,7 +51,7 @@
 // SECTION 1: IMPORTS & CONSTANTS
 // ============================================================================
 
-import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
 import { RSVPEngine } from './rsvp-engine';
 import { DashReaderSettings, WordChunk } from './types';
 import { MarkdownParser } from './markdown-parser';
@@ -262,7 +262,7 @@ export class DashReaderView extends ItemView {
       onDecrementWpm: () => this.changeValue('wpm', -10),
       onQuit: () => this.engine.stop()
     });
-    this.minimapManager = new MinimapManager(this.mainContainerEl, this.engine, this.timeoutManager);
+    this.minimapManager = new MinimapManager(this.mainContainerEl, this.engine, this.timeoutManager, this.settings);
 
     // Display welcome message now that wordDisplay is initialized
     this.wordDisplay.displayWelcomeMessage(
@@ -718,7 +718,7 @@ export class DashReaderView extends ItemView {
   private setupAutoLoad(): void {
     // Event: file-open - Auto-load entire page
     this.registerEvent(
-      this.app.workspace.on('file-open', (file) => {
+      this.app.workspace.on('file-open', (file: TFile | null) => {
         if (!file) return;
 
         this.autoLoadManager.resetForNewFile(file.path);
@@ -1069,6 +1069,14 @@ export class DashReaderView extends ItemView {
   // ============================================================================
 
   /**
+   * Stops the reading engine and updates UI buttons
+   */
+  public stop(): void {
+    this.engine.stop();
+    updatePlayPauseButtons(this.dom, false);
+  }
+
+  /**
    * Updates settings from plugin settings tab
    * Called when user changes settings in main settings panel
    *
@@ -1084,6 +1092,9 @@ export class DashReaderView extends ItemView {
       this.wordEl.style.color = settings.fontColor;
     }
 
+    if (this.minimapManager) {
+      this.minimapManager.updateSettings(settings);
+    }
     this.dom.updateText('wpmDisplay', `${settings.wpm} WPM`);
   }
 }

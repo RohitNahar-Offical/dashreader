@@ -27,11 +27,13 @@ export class MinimapManager {
   private timeoutManager: TimeoutManager;
   private currentWordIndex: number = 0;
   private totalWords: number = 0;
+  private settings: any; // Using any to avoid circularity if needed, but DashReaderSettings is better
 
-  constructor(containerEl: HTMLElement, engine: RSVPEngine, timeoutManager: TimeoutManager) {
+  constructor(containerEl: HTMLElement, engine: RSVPEngine, timeoutManager: TimeoutManager, settings: any) {
     this.containerEl = containerEl;
     this.engine = engine;
     this.timeoutManager = timeoutManager;
+    this.settings = settings;
 
     // Initialize minimap structure immediately (no null as any!)
     // Create minimap container
@@ -133,6 +135,11 @@ export class MinimapManager {
     if (this.progressEl && this.totalWords > 0) {
       const progressPercentage = (wordIndex / this.totalWords) * 100;
       this.progressEl.style.height = `${Math.min(100, Math.max(0, progressPercentage))}%`;
+      
+      // Apply custom color if set
+      if (this.settings?.minimapColor) {
+        this.progressEl.style.background = this.settings.minimapColor;
+      }
     }
 
     // Find the current heading (last heading before or at current position)
@@ -231,6 +238,16 @@ export class MinimapManager {
   hide(): void {
     if (this.minimapEl) {
       this.minimapEl.toggleClass(CSS_CLASSES.hidden, true);
+    }
+  }
+
+  /**
+   * Update settings
+   */
+  updateSettings(settings: any): void {
+    this.settings = settings;
+    if (this.progressEl && settings.minimapColor) {
+      this.progressEl.style.background = settings.minimapColor;
     }
   }
 

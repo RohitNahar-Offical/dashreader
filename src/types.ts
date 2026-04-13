@@ -6,6 +6,7 @@ export interface DashReaderSettings {
   backgroundColor: string;
   fontColor: string;
   fontFamily: string;
+  minimapColor: string;
   showContext: boolean;
   contextWords: number;
   showMinimap: boolean;
@@ -43,6 +44,7 @@ export const DEFAULT_SETTINGS: DashReaderSettings = {
   backgroundColor: '#1e1e1e',
   fontColor: '#ffffff',
   fontFamily: 'inherit',
+  minimapColor: '#4a9eff',
   showContext: false,
   contextWords: 3,
   showMinimap: true,

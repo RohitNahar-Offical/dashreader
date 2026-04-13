@@ -1,6 +1,7 @@
 import { DashReaderSettings, WordChunk, HeadingInfo, HeadingContext } from './types';
 import { TimeoutManager } from './services/timeout-manager';
 import { MicropauseService } from './services/micropause-service';
+import { LIMITS } from './constants';
 
 export class RSVPEngine {
   private words: string[] = [];
@@ -33,7 +34,7 @@ export class RSVPEngine {
   }
 
   setText(text: string, startPosition?: number, startWordIndex?: number): void {
-    // Nettoyer et diviser le texte en mots
+    // Clean and split text into words
     // Important: preserve line breaks by replacing them with a marker FIRST
     const cleaned = text
       .replace(/\n+/g, ' §§LINEBREAK§§ ')  // Replace line breaks FIRST
@@ -50,11 +51,11 @@ export class RSVPEngine {
       word === '§§LINEBREAK§§' ? '\n' : word
     );
 
-    // Utiliser l'index du mot si fourni (prioritaire)
+    // Use word index if provided (priority)
     if (startWordIndex !== undefined) {
       this.currentIndex = Math.max(0, Math.min(startWordIndex, this.words.length - 1));
     } else if (startPosition !== undefined && startPosition > 0) {
-      // Fallback: calculer depuis la position (deprecated)
+      // Fallback: calculate from position (deprecated)
       const textUpToCursor = text.substring(0, startPosition);
       const wordsBeforeCursor = textUpToCursor.trim().split(/\s+/).length;
       this.currentIndex = Math.min(wordsBeforeCursor, this.words.length - 1);
@@ -71,13 +72,13 @@ export class RSVPEngine {
 
     this.isPlaying = true;
 
-    // Initialiser le temps de début et le WPM de départ
+    // Initialize start time and starting WPM
     if (this.startTime === 0) {
       this.startTime = Date.now();
       this.startWpm = this.settings.wpm;
       this.wordsReadInSession = 0; // Reset slow start counter
     } else if (this.lastPauseTime > 0) {
-      // Si on reprend après une pause, ajouter le temps de pause
+      // If resuming after a pause, add pause time
       this.pausedTime += Date.now() - this.lastPauseTime;
       this.lastPauseTime = 0;
     }
@@ -91,14 +92,14 @@ export class RSVPEngine {
       this.timeoutManager.clearTimeout(this.timer);
       this.timer = null;
     }
-    // Enregistrer le moment de la pause
+    // Record pause time
     this.lastPauseTime = Date.now();
   }
 
   stop(): void {
     this.pause();
     this.currentIndex = 0;
-    // Réinitialiser les temps
+    // Reset timings
     this.startTime = 0;
     this.pausedTime = 0;
     this.lastPauseTime = 0;
@@ -191,20 +192,20 @@ export class RSVPEngine {
   }
 
   private getCurrentWpm(): number {
-    // Si l'accélération n'est pas activée, retourner le WPM normal
+    // If acceleration is not enabled, return normal WPM
     if (!this.settings.enableAcceleration || this.startTime === 0) {
       return this.settings.wpm;
     }
 
-    // Calculer le temps écoulé (en secondes)
+    // Calculate elapsed time (in seconds)
     const elapsed = (Date.now() - this.startTime - this.pausedTime) / 1000;
 
-    // Si on a dépassé la durée d'accélération, retourner le WPM cible
+    // If acceleration duration reached, return target WPM
     if (elapsed >= this.settings.accelerationDuration) {
       return this.settings.accelerationTargetWpm;
     }
 
-    // Calculer le WPM progressif
+    // Calculate progressive WPM
     const progress = elapsed / this.settings.accelerationDuration;
     const wpmDiff = this.settings.accelerationTargetWpm - this.startWpm;
     const currentWpm = this.startWpm + (wpmDiff * progress);
@@ -385,7 +386,7 @@ export class RSVPEngine {
   }
 
   setWpm(wpm: number): void {
-    this.settings.wpm = Math.max(50, Math.min(1000, wpm));
+    this.settings.wpm = Math.max(LIMITS.wpm.min, Math.min(LIMITS.wpm.max, wpm));
   }
 
   getWpm(): number {
@@ -416,8 +417,8 @@ export class RSVPEngine {
   }
 
   getEstimatedDuration(): number {
-    // Retourne la durée estimée en secondes pour lire les mots RESTANTS
-    // Calcul précis avec toutes les micropauses (ponctuation, mots longs, headings, etc.)
+    // Returns estimated duration in seconds to read REMAINING words
+    // Accurate calculation with all micropauses (punctuation, long words, headings, etc.)
     if (this.words.length === 0) return 0;
 
     const remainingWords = Math.max(0, this.words.length - this.currentIndex);
@@ -432,12 +433,12 @@ export class RSVPEngine {
   }
 
   private calculateAccurateRemainingTime(wpm: number): number {
-    // Calcule le temps total en millisecondes pour lire tous les mots restants
-    // en tenant compte de TOUTES les micropauses (ponctuation, mots longs, headings, etc.)
+    // Calculates total time in milliseconds for all remaining words
+    // taking into account ALL micropauses (punctuation, long words, headings, etc.)
     if (this.words.length === 0 || this.currentIndex >= this.words.length) return 0;
 
     let totalTimeMs = 0;
-    const baseDelay = (60 / wpm) * 1000; // Délai de base par mot en ms
+    const baseDelay = (60 / wpm) * 1000; // Base delay per word in ms
 
     for (let i = this.currentIndex; i < this.words.length; i++) {
       const word = this.words[i];
@@ -448,17 +449,17 @@ export class RSVPEngine {
       totalTimeMs += baseDelay * multiplier;
     }
 
-    // Convertir en secondes et arrondir
+    // Convert to seconds and round up
     return Math.ceil(totalTimeMs / 1000);
   }
 
   getRemainingWords(): number {
-    // Retourne le nombre de mots restants à lire
+    // Returns number of remaining words to read
     return Math.max(0, this.words.length - this.currentIndex);
   }
 
   getElapsedTime(): number {
-    // Retourne le temps écoulé en secondes
+    // Returns elapsed time in seconds
     if (this.startTime === 0) return 0;
 
     const now = this.isPlaying ? Date.now() : this.lastPauseTime || Date.now();
@@ -466,8 +467,8 @@ export class RSVPEngine {
   }
 
   getRemainingTime(): number {
-    // Retourne le temps restant estimé en secondes
-    // Calcul précis avec toutes les micropauses (ponctuation, mots longs, headings, etc.)
+    // Returns estimated remaining time in seconds
+    // Accurate calculation with all micropauses (punctuation, long words, headings, etc.)
     if (this.words.length === 0 || this.currentIndex >= this.words.length) return 0;
 
     const currentWpm = this.getCurrentWpm();
@@ -477,7 +478,7 @@ export class RSVPEngine {
   }
 
   getCurrentWpmPublic(): number {
-    // Méthode publique pour obtenir le WPM actuel (pour affichage)
+    // Public method to get current WPM (for display)
     return this.getCurrentWpm();
   }
 

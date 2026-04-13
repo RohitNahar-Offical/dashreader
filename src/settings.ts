@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import DashReaderPlugin from '../main';
+import { createVisualColorPicker } from './services/color-picker';
 
 export class DashReaderSettingTab extends PluginSettingTab {
   plugin: DashReaderPlugin;
@@ -190,38 +191,77 @@ export class DashReaderSettingTab extends PluginSettingTab {
     // Section: Apparence
     new Setting(containerEl).setName("Appearance").setHeading();
 
-    new Setting(containerEl)
+    // Highlight Color
+    const highlightColorSetting = new Setting(containerEl)
       .setName('Highlight color')
-      .setDesc('Color for the center character highlight')
-      .addText(text => text
-        .setPlaceholder('#4a9eff')
-        .setValue(this.plugin.settings.highlightColor)
-        .onChange(async (value) => {
-          this.plugin.settings.highlightColor = value;
-          await this.plugin.saveSettings();
-        }));
+      .setDesc('Color for the fixed anchor point');
+    
+    const highlightPickerWrapper = highlightColorSetting.controlEl.createDiv({ cls: 'dashreader-settings-picker-wrapper' });
+    const highlightPickerContainer = highlightPickerWrapper.createDiv({ cls: 'dashreader-settings-picker' });
+    const highlightPicker = createVisualColorPicker(
+      highlightPickerContainer,
+      this.plugin.settings.highlightColor || '#4a9eff',
+      async (value) => {
+        this.plugin.settings.highlightColor = value;
+        await this.plugin.saveSettings();
+      }
+    );
 
-    new Setting(containerEl)
-      .setName('Font color')
-      .setDesc('Text color')
-      .addText(text => text
-        .setPlaceholder('#ffffff')
-        .setValue(this.plugin.settings.fontColor)
-        .onChange(async (value) => {
-          this.plugin.settings.fontColor = value;
-          await this.plugin.saveSettings();
-        }));
+    highlightColorSetting.addButton(btn => btn
+      .setButtonText("Reset")
+      .onClick(async () => {
+        this.plugin.settings.highlightColor = '#4a9eff';
+        highlightPicker.setHex('#4a9eff');
+        await this.plugin.saveSettings();
+      }));
 
-    new Setting(containerEl)
+    // Main Text Color
+    const fontColorSetting = new Setting(containerEl)
+      .setName('Main text color')
+      .setDesc('Color of the words during speed reading');
+    
+    const fontPickerWrapper = fontColorSetting.controlEl.createDiv({ cls: 'dashreader-settings-picker-wrapper' });
+    const fontPickerContainer = fontPickerWrapper.createDiv({ cls: 'dashreader-settings-picker' });
+    const fontPicker = createVisualColorPicker(
+      fontPickerContainer,
+      this.plugin.settings.fontColor || '#ffffff',
+      async (value) => {
+        this.plugin.settings.fontColor = value;
+        await this.plugin.saveSettings();
+      }
+    );
+
+    fontColorSetting.addButton(btn => btn
+      .setButtonText("Reset")
+      .onClick(async () => {
+        this.plugin.settings.fontColor = '#ffffff';
+        fontPicker.setHex('#ffffff');
+        await this.plugin.saveSettings();
+      }));
+
+    // Background Color
+    const backgroundColorSetting = new Setting(containerEl)
       .setName('Background color')
-      .setDesc('Background color')
-      .addText(text => text
-        .setPlaceholder('#1e1e1e')
-        .setValue(this.plugin.settings.backgroundColor)
-        .onChange(async (value) => {
-          this.plugin.settings.backgroundColor = value;
-          await this.plugin.saveSettings();
-        }));
+      .setDesc('Reader panel background');
+    
+    const backgroundPickerWrapper = backgroundColorSetting.controlEl.createDiv({ cls: 'dashreader-settings-picker-wrapper' });
+    const backgroundPickerContainer = backgroundPickerWrapper.createDiv({ cls: 'dashreader-settings-picker' });
+    const backgroundPicker = createVisualColorPicker(
+      backgroundPickerContainer,
+      this.plugin.settings.backgroundColor || '#1e1e1e',
+      async (value) => {
+        this.plugin.settings.backgroundColor = value;
+        await this.plugin.saveSettings();
+      }
+    );
+
+    backgroundColorSetting.addButton(btn => btn
+      .setButtonText("Reset")
+      .onClick(async () => {
+        this.plugin.settings.backgroundColor = '#1e1e1e';
+        backgroundPicker.setHex('#1e1e1e');
+        await this.plugin.saveSettings();
+      }));
 
     // Section: Context
     new Setting(containerEl).setName("Context display").setHeading();
@@ -262,6 +302,30 @@ export class DashReaderSettingTab extends PluginSettingTab {
           this.plugin.settings.showMinimap = value;
           await this.plugin.saveSettings();
         }));
+
+    // Minimap Progress Color
+    const minimapColorSetting = new Setting(containerEl)
+      .setName('Minimap progress color')
+      .setDesc('Color of the document progress in the minimap');
+    
+    const minimapPickerWrapper = minimapColorSetting.controlEl.createDiv({ cls: 'dashreader-settings-picker-wrapper' });
+    const minimapPickerContainer = minimapPickerWrapper.createDiv({ cls: 'dashreader-settings-picker' });
+    const minimapPicker = createVisualColorPicker(
+      minimapPickerContainer,
+      this.plugin.settings.minimapColor || '#4a9eff',
+      async (value) => {
+        this.plugin.settings.minimapColor = value;
+        await this.plugin.saveSettings();
+      }
+    );
+
+    minimapColorSetting.addButton(btn => btn
+      .setButtonText("Reset")
+      .onClick(async () => {
+        this.plugin.settings.minimapColor = '#4a9eff';
+        minimapPicker.setHex('#4a9eff');
+        await this.plugin.saveSettings();
+      }));
 
     new Setting(containerEl)
       .setName('Show breadcrumb')
