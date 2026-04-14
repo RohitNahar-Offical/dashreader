@@ -1,117 +1,164 @@
+import { HeadingInfo, Paragraph } from './types';
+
 /**
- * Parses Markdown to remove syntax and keep only the text
+ * MarkdownParser (Zen v5.0 - Structure First)
+ * 
+ * Rebuilt from scratch to ensure zero marker leakage.
+ * Uses a clean multi-pass strategy:
+ * 1. Extraction: Identify headings and callouts.
+ * 2. Cleanup: Strip syntax while preserving word flow.
+ * 3. Mapping: Align structure to word indices.
  */
 export class MarkdownParser {
+  static parse(markdown: string): { words: string[]; headings: HeadingInfo[]; paragraphs: Paragraph[] } {
+    const headings: HeadingInfo[] = [];
+    const paragraphs: Paragraph[] = [];
+    const cleanWords: string[] = [];
 
-  static parseToPlainText(markdown: string): string {
-    let text = markdown;
+    // 1. Initial cleanup (Frontmatter, block comments)
+    let cleanMarkdown = markdown.replace(/^---[\s\S]*?---\n?/m, '');
+    cleanMarkdown = cleanMarkdown.replace(/%%[\s\S]*?%%/g, '');
 
-    // 1. Remove YAML frontmatter FIRST (usually at the beginning)
-    text = text.replace(/^---[\s\S]*?---\n?/m, '');
+    const lines = cleanMarkdown.split('\n');
+    let currentWordIndex = 0;
+    
+    let currentParaStartIndex: number | null = null;
+    let paraBuffer: string[] = [];
 
-    // 2. Protect code block content with temporary markers
-    // This prevents # comments in code from being treated as headings
-    const codeBlocks: string[] = [];
-    text = text.replace(/```[\w-]*\n?([\s\S]*?)```/g, (_match, code: string) => {
-      const index = codeBlocks.length;
-      codeBlocks.push(code);
-      return `___CODE_BLOCK_${index}___`;
-    });
+    for (let line of lines) {
+      const trimmed = line.trim();
+      
+      // -- Structural Detection --
+      // Headings
+      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+      if (headingMatch) {
+        this.saveParagraph(paragraphs, currentParaStartIndex, currentWordIndex, paraBuffer);
+        currentParaStartIndex = null;
+        paraBuffer = [];
 
-    // 3. Remove inline code but keep content
-    text = text.replace(/`([^`]+)`/g, '$1');
+        const level = headingMatch[1].length;
+        const text = this.cleanLine(headingMatch[2]);
+        const headingWords = text.split(/\s+/).filter(w => w.length > 0);
+        
+        headings.push({
+          level,
+          text: headingWords.join(' '),
+          wordIndex: currentWordIndex,
+          wordLength: headingWords.length
+        });
 
-    // 4. Remove images ![alt](url) BEFORE links
-    text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '');
+        headingWords.forEach(w => {
+          cleanWords.push(w);
+          currentWordIndex++;
+        });
+        continue;
+      }
 
-    // 5. Remove links [text](url) -> keep text
-    text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+      // Callouts
+      const calloutMatch = trimmed.match(/^>\s*\[!([\w-]+)\]\s*(.*)$/);
+      if (calloutMatch) {
+        this.saveParagraph(paragraphs, currentParaStartIndex, currentWordIndex, paraBuffer);
+        currentParaStartIndex = null;
+        paraBuffer = [];
 
-    // 6. Remove wikilinks [[link]] or [[link|alias]] -> keep alias or link
-    text = text.replace(/\[\[([^\]|]+)(\|([^\]]+))?\]\]/g, (_match, link: string, _pipe: string | undefined, alias: string | undefined) => {
-      return alias || link;
-    });
+        const type = calloutMatch[1];
+        const title = calloutMatch[2].trim() || type;
+        const text = this.cleanLine(title);
+        const callWords = text.split(/\s+/).filter(w => w.length > 0);
 
-    // 7. Remove bold/italic (in order: **, __, *, _)
-    text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '$1'); // bold+italic ***
-    text = text.replace(/\*\*([^*]+)\*\*/g, '$1'); // bold **
-    text = text.replace(/__([^_]+)__/g, '$1'); // bold __
-    text = text.replace(/\*([^*\n]+)\*/g, '$1'); // italic *
-    text = text.replace(/_([^_\n]+)_/g, '$1'); // italic _
+        headings.push({
+          level: 0,
+          text: callWords.join(' '),
+          wordIndex: currentWordIndex,
+          wordLength: callWords.length,
+          calloutType: type
+        });
 
-    // 8. Remove strikethrough ~~text~~
-    text = text.replace(/~~([^~]+)~~/g, '$1');
+        callWords.forEach(w => {
+          cleanWords.push(w);
+          currentWordIndex++;
+        });
+        continue;
+      }
 
-    // 9. Remove highlights ==text==
-    text = text.replace(/==([^=]+)==/g, '$1');
+      // -- Content Extraction --
+      if (trimmed === '') {
+        this.saveParagraph(paragraphs, currentParaStartIndex, currentWordIndex, paraBuffer);
+        currentParaStartIndex = null;
+        paraBuffer = [];
+        continue;
+      }
 
-    // 10. Mark headings with their level (#, ##, etc.)
-    // # Title → [H1]Title, ## Title → [H2]Title, etc. (no space after marker)
-    text = text.replace(/^(#{1,6})\s+(.+)$/gm, (_match: string, hashes: string, content: string) => {
-      const level = hashes.length;
-      return `[H${level}]${content}`;
-    });
+      const cleanLineText = this.cleanLine(line);
+      const wordsOnLine = cleanLineText.split(/\s+/).filter(w => w.length > 0);
+      
+      if (wordsOnLine.length > 0) {
+        if (currentParaStartIndex === null) currentParaStartIndex = currentWordIndex;
+        wordsOnLine.forEach(w => {
+          cleanWords.push(w);
+          paraBuffer.push(w);
+          currentWordIndex++;
+        });
+      }
+    }
 
-    // 11. Mark Obsidian callouts as pseudo-headings
-    // > [!type] Title → [CALLOUT:type]Title
-    // Keeps content of following lines (handled by next step)
-    text = text.replace(/^>\s*\[!([\w-]+)\]\s*(.*)$/gm, (_match: string, type: string, title: string) => {
-      // If no title, use type as title
-      const displayTitle = title.trim() || type;
-      return `[CALLOUT:${type}]${displayTitle}`;
-    });
+    // Final para close
+    this.saveParagraph(paragraphs, currentParaStartIndex, currentWordIndex, paraBuffer);
 
-    // 12. Remove blockquotes > (keep content)
-    text = text.replace(/^>\s*/gm, '');
+    return {
+      words: cleanWords,
+      headings,
+      paragraphs
+    };
+  }
 
-    // 13. Remove lists - * + (keep content)
-    text = text.replace(/^[\s]*[-*+]\s+/gm, '');
-    text = text.replace(/^[\s]*\d+\.\s+/gm, '');
-
-    // 14. Remove dividers ---, ***, ___
-    text = text.replace(/^[\s]*[-*_]{3,}[\s]*$/gm, '');
-
-    // 15. Remove Obsidian tags/hashtags #tag (but not inside words)
-    text = text.replace(/(?:^|\s)(#[a-zA-Z0-9_/-]+)/g, '');
-
-    // 16. Remove footnotes [^1]
-    text = text.replace(/\[\^[^\]]+\]/g, '');
-
-    // 17. Remove footnote references
-    text = text.replace(/^\[\^[^\]]+\]:.*$/gm, '');
-
-    // 18. Remove Obsidian backlinks (backlinks sections)
-    text = text.replace(/^---\s*Backlinks?\s*---[\s\S]*$/m, '');
-    text = text.replace(/^##?\s*Backlinks?[\s\S]*$/m, '');
-
-    // 19. Remove HTML comments <!-- -->
-    text = text.replace(/<!--[\s\S]*?-->/g, '');
-
-    // 20. Remove HTML tags
-    text = text.replace(/<[^>]+>/g, '');
-
-    // 21. Remove multiple empty lines (keep max 2 line breaks)
-    text = text.replace(/\n{3,}/g, '\n\n');
-
-    // 22. Remove extra spaces on each line
-    text = text.replace(/^[ \t]+/gm, '');
-    text = text.replace(/[ \t]+$/gm, '');
-
-    // 23. Restore code block content
-    text = text.replace(/___CODE_BLOCK_(\d+)___/g, (_match: string, index: string) => {
-      return codeBlocks[parseInt(index)] || '';
-    });
-
-    // 24. Final trim
-    text = text.trim();
-
-    return text;
+  private static saveParagraph(paras: Paragraph[], start: number | null, current: number, buffer: string[]): void {
+    if (start !== null && buffer.length > 0) {
+      paras.push({
+        wordStartIndex: start,
+        wordEndIndex: current - 1,
+        text: buffer.join(' ')
+      });
+    }
   }
 
   /**
-   * Parses selected text taking Obsidian context into account
+   * Cleans a single line of text from Markdown syntax
    */
-  static parseSelection(text: string): string {
-    return this.parseToPlainText(text);
+  private static cleanLine(line: string): string {
+    let t = line;
+    
+    // Frontmatter/Comments should be pre-filtered if possible, but handle inline
+    t = t.replace(/%%[\s\S]*?%%/g, '');
+    
+    // Links/Images
+    t = t.replace(/!\[\[([^\]|]+)(\|([^\]]+))?\]\]/g, '$3');
+    t = t.replace(/\[\[([^\]|]+)(\|([^\]]+))?\]\]/g, (_m, link, _p, alias) => alias || link);
+    t = t.replace(/!\[[^\]]*\]\([^)]+\)/g, '');
+    t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+    
+    // Formatting
+    t = t.replace(/\*\*\*([^*]+)\*\*\*/g, '$1');
+    t = t.replace(/\*\*([^*]+)\*\*/g, '$1');
+    t = t.replace(/__([^_]+)__/g, '$1');
+    t = t.replace(/\*([^*\n]+)\*/g, '$1');
+    t = t.replace(/_([^_\n]+)_/g, '$1');
+    t = t.replace(/~~([^~]+)~~/g, '$1');
+    t = t.replace(/==([^=]+)==/g, '$1');
+    t = t.replace(/`([^`]+)`/g, '$1');
+    
+    // Obsidian Decorations & Technical Noise
+    t = t.replace(/<[^>]+>/g, ''); // Strip all HTML tags
+    t = t.replace(/\[\^[^\]]+\]/g, ''); // Strip footnote references [^1]
+    t = t.replace(/\$[^$]+\$/g, '[MATH]'); // Inline math protection
+    
+    t = t.replace(/^>\s*/gm, '');
+    t = t.replace(/^[\s]*[-*+]\s+\[.\]\s*/gm, '');
+    t = t.replace(/^[\s]*[-*+]\s+/gm, '');
+    t = t.replace(/^[\s]*\d+\.\s+/gm, '');
+    t = t.replace(/(?:^|\s)(#[a-zA-Z0-9_/-]+)/g, ''); // Tags
+    t = t.replace(/\s+\^[a-zA-Z0-9-]+$/gm, ''); // Block IDs
+    
+    return t.trim();
   }
 }

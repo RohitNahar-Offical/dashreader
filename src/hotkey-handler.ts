@@ -105,6 +105,9 @@ export class HotkeyHandler {
     if (!activeElement) return false;
 
     const tagName = activeElement.tagName.toLowerCase();
-    return tagName === 'input' || tagName === 'textarea';
+    const isInput = tagName === 'input' || tagName === 'textarea';
+    const isContentEditable = activeElement.hasAttribute('contenteditable') || (activeElement as HTMLElement).isContentEditable;
+    
+    return isInput || isContentEditable;
   }
 }

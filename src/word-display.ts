@@ -1,255 +1,153 @@
+import { QuickReaderSettings, WordChunk } from './types';
+
 /**
- * WordDisplay - Manages word display with highlighting and formatting
- *
- * Responsibilities:
- * - Display words with center character highlighting
- * - Handle heading display with dynamic font sizes
- * - Handle callout display with icons
- * - Show visual separators before headings
- * - Escape HTML to prevent XSS
+ * WordDisplay
+ * 
+ * Manages the high-performance rendering of words in the Zen stage.
+ * Implements ORP (Optimal Recognition Point) logic for maximum speed.
  */
-
-import { DashReaderSettings } from './types';
-import { HEADING_MULTIPLIERS } from './constants';
-
 export class WordDisplay {
-  private wordEl: HTMLElement;
-  private settings: DashReaderSettings;
-
-  /**
-   * Callout icon mapping
-   */
-  private readonly calloutIcons: Record<string, string> = {
-    note: '📝',
-    abstract: '📄',
-    info: 'ℹ️',
-    tip: '💡',
-    success: '✅',
-    question: '❓',
-    warning: '⚠️',
-    failure: '❌',
-    danger: '⚡',
-    bug: '🐛',
-    example: '📋',
-    quote: '💬'
-  };
-
-  constructor(wordEl: HTMLElement, settings: DashReaderSettings) {
-    this.wordEl = wordEl;
+  private container: HTMLElement;
+  private settings: QuickReaderSettings;
+  
+  constructor(container: HTMLElement, settings: QuickReaderSettings) {
+    this.container = container;
     this.settings = settings;
+    this.applyBaseStyles();
+  }
+
+  private applyBaseStyles(): void {
+    this.container.style.fontSize = `${this.settings.fontSize}px`;
+    this.container.style.fontFamily = this.settings.fontFamily;
+    this.container.style.color = this.settings.fontColor;
   }
 
   /**
-   * Updates settings (when user changes font size, etc.)
-   *
-   * @param settings - New settings to apply
+   * Main rendering method for the current word chunk
    */
-  updateSettings(settings: DashReaderSettings): void {
-    this.settings = settings;
-  }
-
-  /**
-   * Displays a word with optional heading level or callout type
-   * Handles font size adjustment, icons, and separators
-   *
-   * @param word - The word to display
-   * @param headingLevel - Heading level (1-6) or 0 for normal text/callouts
-   * @param showSeparator - Whether to show separator line before heading/callout
-   * @param calloutType - Callout type (note, abstract, info, etc.) if this is a callout
-   */
-  displayWord(word: string, headingLevel: number, showSeparator: boolean = false, calloutType?: string): void {
-    // Calculate font size based on heading level or callout
-    let fontSizeMultiplier = 1.0;
-    let fontWeight = 'normal';
-    let iconPrefix = '';
-
-    if (calloutType) {
-      // Callouts: slightly larger font, with icon prefix
-      fontSizeMultiplier = 1.2;
-      fontWeight = 'bold';
-      iconPrefix = this.calloutIcons[calloutType.toLowerCase()] || '📌';
-    } else if (headingLevel > 0) {
-      // Headings: size based on level
-      const multipliers = [
-        0,
-        HEADING_MULTIPLIERS.h1,
-        HEADING_MULTIPLIERS.h2,
-        HEADING_MULTIPLIERS.h3,
-        HEADING_MULTIPLIERS.h4,
-        HEADING_MULTIPLIERS.h5,
-        HEADING_MULTIPLIERS.h6
-      ];
-      fontSizeMultiplier = multipliers[headingLevel] || 1.0;
-      fontWeight = 'bold';
-    }
-
-    const adjustedFontSize = this.settings.fontSize * fontSizeMultiplier;
-
-    // Clear and rebuild using DOM API (not innerHTML)
-    this.wordEl.empty();
-
-    // Add separator if needed
-    if (showSeparator) {
-      this.wordEl.createDiv({ cls: 'dashreader-heading-separator' });
-    }
-
-    // Create word container
-    const wordContainer = this.wordEl.createDiv({ cls: 'dashreader-word-with-heading' });
-    wordContainer.style.fontSize = `${adjustedFontSize}px`;
-    wordContainer.style.fontWeight = fontWeight;
-
-    // Add icon prefix if callout
-    if (iconPrefix) {
-      wordContainer.createSpan({
-        text: iconPrefix,
-        cls: 'dashreader-callout-icon'
-      });
-    }
-
-    // Add processed word using DOM API (not innerHTML for security)
-    this.addProcessedWord(wordContainer, word);
-  }
-
-  /**
-   * Adds a processed word to the container using DOM API
-   * Implements "Optimal Recognition Point" (ORP) alignment for maximum focus
-   *
-   * @param container - Container element to add word to
-   * @param rawWord - Raw word (may contain special characters)
-   */
-  private addProcessedWord(container: HTMLElement, rawWord: string): void {
-    // Special case: line breaks
-    if (rawWord === '\n') {
-      container.createEl('br');
-      return;
-    }
-
-    // Remove markers
-    const word = rawWord.replace(/^\[H\d\]/, '').replace(/^\[CALLOUT:[\w-]+\]/, '');
-
-    if (word.length > 0) {
-      // Add visual anchor lines (top and bottom ticks)
-      container.createDiv({ cls: 'dashreader-anchor-line dashreader-anchor-top' });
-      container.createDiv({ cls: 'dashreader-anchor-line dashreader-anchor-bottom' });
-
-      // Create ORP container
-      const orpContainer = container.createDiv({ cls: 'dashreader-word-orp-container' });
-
-      // Calculate the Optimal Recognition Point (ORP)
-      // Usually the 2nd letter for short words, 3rd or 4th for long words
-      let orpIndex = 0;
-      if (word.length <= 4) orpIndex = 1;
-      else if (word.length <= 8) orpIndex = 2;
-      else orpIndex = 3;
-
-      // Ensure index is within bounds
-      orpIndex = Math.min(orpIndex, word.length - 1);
-
-      const before = word.substring(0, orpIndex);
-      const center = word.charAt(orpIndex);
-      const after = word.substring(orpIndex + 1);
-
-      // Build the aligned word parts
-      // Left part (aligned right)
-      const leftSpan = orpContainer.createSpan({ cls: 'dashreader-word-part dashreader-word-left' });
-      leftSpan.setText(before);
-
-      // Center part (the anchor point)
-      const centerSpan = orpContainer.createSpan({
-        text: center,
-        cls: 'dashreader-word-part dashreader-word-center dashreader-highlight'
-      });
-      // Allow user setting for highlight color to override
-      if (this.settings.highlightColor) {
-        centerSpan.style.color = this.settings.highlightColor;
-      }
-
-      // Right part (aligned left)
-      const rightSpan = orpContainer.createSpan({ cls: 'dashreader-word-part dashreader-word-right' });
-      rightSpan.setText(after);
+  render(chunk: WordChunk): void {
+    this.container.empty();
+    
+    // Apply structural styling (v3.0)
+    const isHeading = chunk.metadata?.headingLevel !== undefined && chunk.metadata.headingLevel > 0;
+    this.container.toggleClass('is-heading', isHeading);
+    if (isHeading) {
+      this.container.setAttribute('data-level', String(chunk.metadata?.headingLevel));
     } else {
-      container.setText(word);
+      this.container.removeAttribute('data-level');
+    }
+
+    const words = chunk.text.split(' ');
+    
+    if (words.length === 1) {
+      this.renderSingleWord(words[0]);
+    } else {
+      this.renderMultiWord(words);
     }
   }
 
   /**
-   * Displays a welcome message (no text loaded)
-   * Uses DOM API to build the message instead of innerHTML
-   *
-   * @param icon - Icon to display
-   * @param mainText - Main message text
-   * @param subText - Instruction text
+   * Renders a single word with ORP highlighting
    */
-  displayWelcomeMessage(icon: string, mainText: string, subText: string): void {
-    this.wordEl.empty();
-    const welcomeDiv = this.wordEl.createDiv({ cls: 'dashreader-welcome-message' });
-    welcomeDiv.createDiv({
-      text: `${icon} ${mainText}`,
-      cls: 'dashreader-welcome-icon'
-    });
-    welcomeDiv.createDiv({
-      text: subText,
-      cls: 'dashreader-welcome-instruction'
-    });
+  private renderSingleWord(word: string): void {
+    if (!word) return;
+
+    // Calculate Responsive Scaling for long words
+    const baseSize = this.settings.fontSize;
+    if (word.length > 13) {
+      const scaleFactor = Math.max(0.6, 1 - (word.length - 13) * 0.05);
+      this.container.style.fontSize = `${baseSize * scaleFactor}px`;
+    } else {
+      this.container.style.fontSize = `${baseSize}px`;
+    }
+
+    const orpIndex = this.calculateORP(word);
+    
+    // 1. Left Wing (Pushes anchor to center)
+    const leftText = word.substring(0, orpIndex);
+    const leftWing = this.container.createDiv({ cls: 'qr-word-left-wing' });
+    leftWing.setText(leftText || '');
+
+    // 2. ORP Anchor (The Fixed Center Point)
+    const orpChar = word.charAt(orpIndex);
+    this.container.createDiv({ text: orpChar, cls: 'qr-word-orp' });
+
+    // 3. Right Wing (Balances the layout)
+    const rightText = word.substring(orpIndex + 1);
+    const rightWing = this.container.createDiv({ cls: 'qr-word-right-wing' });
+    rightWing.setText(rightText || '');
+  }
+
+  private renderMultiWord(words: string[]): void {
+    this.container.setText(words.join(' '));
   }
 
   /**
-   * Displays a ready message (text loaded, ready to start)
-   * Uses DOM API to build the message instead of innerHTML
-   *
-   * @param wordsToRead - Number of words to read
-   * @param totalWords - Total words in document
-   * @param startIndex - Starting word index (if resuming)
-   * @param durationText - Formatted estimated duration
-   * @param fileName - Optional source file name
-   * @param lineNumber - Optional source line number
+   * Optimal Recognition Point calculation
+   * Usually 25% to 35% into the word
    */
-  displayReadyMessage(
-    wordsToRead: number,
-    totalWords: number,
-    startIndex: number | undefined,
-    durationText: string,
-    fileName?: string,
-    lineNumber?: number
-  ): void {
-    this.wordEl.empty();
-    const readyDiv = this.wordEl.createDiv({ cls: 'dashreader-ready-message' });
-
-    // Add source info if provided
-    if (fileName) {
-      const sourceDiv = readyDiv.createDiv({ cls: 'dashreader-ready-source' });
-      sourceDiv.createSpan({ text: '📄 ' });
-      sourceDiv.createSpan({ text: fileName });
-      if (lineNumber) {
-        sourceDiv.createSpan({ text: ` (line ${lineNumber})` });
-      }
-    }
-
-    // Build main message
-    const mainText = readyDiv.createSpan();
-    mainText.createSpan({ text: `Ready to read ${wordsToRead} words` });
-
-    if (startIndex !== undefined && startIndex > 0) {
-      const startInfo = mainText.createSpan({ cls: 'dashreader-ready-start-info' });
-      startInfo.setText(` (starting at word ${startIndex + 1}/${totalWords})`);
-    }
-
-    readyDiv.createEl('br');
-    readyDiv.createSpan({
-      text: `Estimated time: ~${durationText}`,
-      cls: 'dashreader-ready-duration'
-    });
-    readyDiv.createEl('br');
-    readyDiv.createSpan({
-      text: 'Press Shift+Space to start',
-      cls: 'dashreader-ready-duration'
-    });
+  private calculateORP(word: string): number {
+    const len = word.length;
+    if (len <= 1) return 0;
+    if (len <= 5) return 1;
+    if (len <= 9) return 2;
+    if (len <= 13) return 3;
+    return 4;
   }
 
   /**
-   * Clears the word display
+   * Update display settings
    */
+  updateSettings(settings: QuickReaderSettings): void {
+    this.settings = settings;
+    this.applyBaseStyles();
+  }
+
+  showReady(fileName: string, totalWords: number, wpm: number, contentSnippet: string): void {
+    this.container.empty();
+    const readyContainer = this.container.createDiv({ cls: 'qr-dashboard' });
+    
+    // 1. Header: Document Identity
+    const header = readyContainer.createDiv({ cls: 'qr-db-header' });
+    header.createEl('h1', { text: fileName, cls: 'qr-db-title' });
+    
+    const meta = header.createDiv({ cls: 'qr-db-meta' });
+    const minutes = Math.ceil(totalWords / wpm);
+    this.createPill(meta, 'book-open', `${totalWords} words`);
+    this.createPill(meta, 'clock', `${minutes} min read`);
+    this.createPill(meta, 'zap', `${wpm} WPM`);
+
+    // 2. Content Snapshot
+    const preview = readyContainer.createDiv({ cls: 'qr-db-preview' });
+    preview.createDiv({ cls: 'qr-db-preview-label', text: 'DOCUMENT PREVIEW' });
+    preview.createDiv({ cls: 'qr-db-preview-text', text: contentSnippet + '...' });
+
+    // 3. Command Center (Shortcuts)
+    const shortcuts = readyContainer.createDiv({ cls: 'qr-db-shortcuts' });
+    this.createShortcut(shortcuts, 'Space', 'Play / Pause');
+    this.createShortcut(shortcuts, '↑ / ↓', 'Speed +/- 25');
+    this.createShortcut(shortcuts, '← / →', 'Seek 10 Words');
+    this.createShortcut(shortcuts, 'C', 'Toggle Context');
+    this.createShortcut(shortcuts, 'Esc', 'Close Reader');
+
+    // 4. Primary CTA
+    const cta = readyContainer.createDiv({ cls: 'qr-db-cta' });
+    cta.createDiv({ text: 'PRESS SPACE TO START', cls: 'qr-db-pulse-text' });
+  }
+
+  private createPill(parent: HTMLElement, icon: string, text: string): void {
+    const pill = parent.createDiv({ cls: 'qr-db-pill' });
+    pill.createSpan({ text: icon === 'book-open' ? '📖' : icon === 'clock' ? '⏱️' : '⚡', cls: 'qr-db-pill-icon' });
+    pill.createSpan({ text: text });
+  }
+
+  private createShortcut(parent: HTMLElement, key: string, label: string): void {
+    const item = parent.createDiv({ cls: 'qr-db-shortcut-item' });
+    item.createSpan({ text: key, cls: 'qr-db-key' });
+    item.createSpan({ text: label, cls: 'qr-db-label' });
+  }
+
   clear(): void {
-    this.wordEl.empty();
+    this.container.empty();
   }
 }

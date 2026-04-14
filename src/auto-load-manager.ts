@@ -301,6 +301,7 @@ export function extractEditorContent(
  * ```
  */
 export class AutoLoadManager {
+  private eventRefs: any[] = [];
   private state: AutoLoadState;
   private app: App;
   private loadTextCallback: LoadTextCallback;
@@ -341,6 +342,24 @@ export class AutoLoadManager {
       lastCursorPosition: -1,
       lastCheckTime: 0,
     };
+  }
+
+  /**
+   * Tracks a workspace event for later cleanup
+   */
+  public trackEvent(ref: any): void {
+    this.eventRefs.push(ref);
+  }
+
+  /**
+   * Cleans up all registered workspace events
+   */
+  public destroy(): void {
+    this.eventRefs.forEach(ref => {
+      // Use Obsidian's offref to unregister
+      (this.app.workspace as any).offref(ref);
+    });
+    this.eventRefs = [];
   }
 
   /**

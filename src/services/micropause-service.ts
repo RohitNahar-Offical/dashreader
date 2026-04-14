@@ -148,11 +148,41 @@ class LongWordStrategy implements MicropauseStrategy {
 /**
  * Strategy for paragraph breaks (line breaks)
  */
+/**
+ * Strategy for paragraph breaks (line breaks)
+ */
 class ParagraphBreakStrategy implements MicropauseStrategy {
   constructor(private multiplier: number) {}
 
   getMultiplier(word: string): number {
     return word.includes('\n') ? this.multiplier : 1.0;
+  }
+}
+
+/**
+ * Strategy for [MATH] markers
+ */
+class MathStrategy implements MicropauseStrategy {
+  getMultiplier(word: string): number {
+    return word.includes('[MATH]') ? 2.5 : 1.0;
+  }
+}
+
+/**
+ * Strategy for [EMBED:...] markers
+ */
+class EmbedStrategy implements MicropauseStrategy {
+  getMultiplier(word: string): number {
+    return word.includes('[EMBED:') ? 2.0 : 1.0;
+  }
+}
+
+/**
+ * Strategy for [DONE] markers
+ */
+class DoneStrategy implements MicropauseStrategy {
+  getMultiplier(word: string): number {
+    return word.includes('[DONE]') ? 1.5 : 1.0;
   }
 }
 
@@ -167,8 +197,11 @@ export class MicropauseService {
     this.enabled = settings.enableMicropause;
 
     // Initialize all strategies in detection order
-    // Order matters: headings first, then callouts, then markers, etc.
-    this.strategies = [
+    this.strategies = this.createStrategies(settings);
+  }
+
+  private createStrategies(settings: DashReaderSettings): MicropauseStrategy[] {
+    return [
       new HeadingStrategy(),
       new CalloutStrategy(settings.micropauseCallouts),
       new SectionMarkerStrategy(settings.micropauseSectionMarkers),
@@ -177,7 +210,10 @@ export class MicropauseService {
       new OtherPunctuationStrategy(settings.micropauseOtherPunctuation),
       new NumberStrategy(settings.micropauseNumbers),
       new LongWordStrategy(settings.micropauseLongWords),
-      new ParagraphBreakStrategy(settings.micropauseParagraph)
+      new ParagraphBreakStrategy(settings.micropauseParagraph),
+      new MathStrategy(),
+      new EmbedStrategy(),
+      new DoneStrategy()
     ];
   }
 
@@ -187,16 +223,6 @@ export class MicropauseService {
    *
    * @param word - The word to analyze
    * @returns Total multiplier (1.0 = no pause, >1.0 = longer pause)
-   *
-   * @example
-   * ```typescript
-   * const service = new MicropauseService(settings);
-   *
-   * service.calculateMultiplier("Hello");     // 1.0 (no special characteristics)
-   * service.calculateMultiplier("Hello!");    // 2.5 (sentence punctuation)
-   * service.calculateMultiplier("[H1]Title"); // 2.0 (heading)
-   * service.calculateMultiplier("Hello!\n");  // 6.25 (2.5 * 2.5 = punctuation * paragraph)
-   * ```
    */
   calculateMultiplier(word: string): number {
     if (!this.enabled) return 1.0;
@@ -214,24 +240,11 @@ export class MicropauseService {
 
   /**
    * Updates service with new settings
-   * Recreates strategies with updated multipliers
    *
    * @param settings - New settings
    */
   updateSettings(settings: DashReaderSettings): void {
     this.enabled = settings.enableMicropause;
-
-    // Recreate strategies with new multipliers
-    this.strategies = [
-      new HeadingStrategy(),
-      new CalloutStrategy(settings.micropauseCallouts),
-      new SectionMarkerStrategy(settings.micropauseSectionMarkers),
-      new ListBulletStrategy(settings.micropauseListBullets),
-      new SentencePunctuationStrategy(settings.micropausePunctuation),
-      new OtherPunctuationStrategy(settings.micropauseOtherPunctuation),
-      new NumberStrategy(settings.micropauseNumbers),
-      new LongWordStrategy(settings.micropauseLongWords),
-      new ParagraphBreakStrategy(settings.micropauseParagraph)
-    ];
+    this.strategies = this.createStrategies(settings);
   }
 }

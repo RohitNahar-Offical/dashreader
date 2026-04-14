@@ -210,6 +210,7 @@ export function validateSettings(partial: Partial<DashReaderSettings> | null | u
     highlightColor: validateColor(partial.highlightColor, DEFAULT_SETTINGS.highlightColor),
     backgroundColor: validateColor(partial.backgroundColor, DEFAULT_SETTINGS.backgroundColor),
     fontColor: validateColor(partial.fontColor, DEFAULT_SETTINGS.fontColor),
+    minimapColor: validateColor(partial.minimapColor, DEFAULT_SETTINGS.minimapColor),
 
     // String settings
     fontFamily: validateString(partial.fontFamily, DEFAULT_SETTINGS.fontFamily),
@@ -230,5 +231,8 @@ export function validateSettings(partial: Partial<DashReaderSettings> | null | u
     showStats: validateBoolean(partial.showStats, DEFAULT_SETTINGS.showStats),
     enableSlowStart: validateBoolean(partial.enableSlowStart, DEFAULT_SETTINGS.enableSlowStart),
     enableAcceleration: validateBoolean(partial.enableAcceleration, DEFAULT_SETTINGS.enableAcceleration),
+    showFlowText: validateBoolean(partial.showFlowText, DEFAULT_SETTINGS.showFlowText),
+    flowTextOpacity: validateNumber(partial.flowTextOpacity, DEFAULT_SETTINGS.flowTextOpacity, 0.05, 0.95),
+    showSelectionBrackets: validateBoolean(partial.showSelectionBrackets, DEFAULT_SETTINGS.showSelectionBrackets),
   };
 }

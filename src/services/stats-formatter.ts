@@ -117,13 +117,12 @@ export class StatsFormatter {
    */
   formatReadingStats(stats: ReadingStats): string {
     const { wordsRead, totalWords, elapsedTime, currentWpm, remainingTime } = stats;
-
+    const progressText = `${wordsRead}/${totalWords}`;
     return [
-      `${wordsRead}/${totalWords} words`,
+      `${progressText} words`,
       this.formatTime(elapsedTime),
-      `${currentWpm} WPM`,
-      `${this.formatTime(remainingTime)} left`
-    ].join(' | ');
+      `~${this.formatTime(remainingTime)} left`
+    ].join('  •  ');
   }
 
   /**

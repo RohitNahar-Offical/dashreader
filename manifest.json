@@ -1,10 +1,10 @@
 {
-  "id": "dashreader",
-  "name": "DashReader",
-  "version": "1.4.3",
+  "id": "quick-reader",
+  "name": "Quick Reader",
+  "version": "1.0.0",
   "minAppVersion": "0.15.0",
-  "description": "Speed reading with RSVP (Rapid Serial Visual Presentation) - Read faster, understand better.",
-  "author": "inattendu",
-  "authorUrl": "https://github.com/inattendu",
+  "description": "High-performance Zen speed reading modal. Read faster, understand more with zero distractions.",
+  "author": "Quick Reader Team",
+  "authorUrl": "",
   "isDesktopOnly": false
 }

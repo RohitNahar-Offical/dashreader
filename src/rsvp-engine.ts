@@ -1,492 +1,232 @@
-import { DashReaderSettings, WordChunk, HeadingInfo, HeadingContext } from './types';
-import { TimeoutManager } from './services/timeout-manager';
-import { MicropauseService } from './services/micropause-service';
-import { LIMITS } from './constants';
+import { WordChunk, QuickReaderSettings, HeadingInfo, HeadingContext, Paragraph } from './types';
+import { ENGINE_CONSTANTS } from './constants';
 
+/**
+ * RSVPEngine
+ * 
+ * Core logic for Rapid Serial Visual Presentation.
+ * Decoupled from the DOM to ensure maximum performance and testability.
+ */
 export class RSVPEngine {
   private words: string[] = [];
   private currentIndex: number = 0;
   private isPlaying: boolean = false;
   private timer: number | null = null;
-  private settings: DashReaderSettings;
-  private timeoutManager: TimeoutManager;
-  private micropauseService: MicropauseService;
+  private settings: QuickReaderSettings;
   private onWordChange: (chunk: WordChunk) => void;
-  private onComplete: () => void;
-  private startTime: number = 0;
-  private startWpm: number = 0;
-  private pausedTime: number = 0;
-  private lastPauseTime: number = 0;
   private headings: HeadingInfo[] = [];
-  private wordsReadInSession: number = 0;
+  private paragraphs: Paragraph[] = [];
+  
+  // Acceleration & Timers
+  private startTime: number = 0;
+  private pauseTime: number = 0;
+  private totalPausedTime: number = 0;
 
-  constructor(
-    settings: DashReaderSettings,
-    onWordChange: (chunk: WordChunk) => void,
-    onComplete: () => void,
-    timeoutManager: TimeoutManager
-  ) {
+  constructor(settings: QuickReaderSettings, onWordChange: (chunk: WordChunk) => void) {
     this.settings = settings;
     this.onWordChange = onWordChange;
-    this.onComplete = onComplete;
-    this.timeoutManager = timeoutManager;
-    this.micropauseService = new MicropauseService(settings);
   }
 
-  setText(text: string, startPosition?: number, startWordIndex?: number): void {
-    // Clean and split text into words
-    // Important: preserve line breaks by replacing them with a marker FIRST
-    const cleaned = text
-      .replace(/\n+/g, ' §§LINEBREAK§§ ')  // Replace line breaks FIRST
-      .replace(/[ \t]+/g, ' ')              // Then clean up spaces/tabs (NOT \n!)
-      .trim();
-
-    this.words = cleaned.split(/\s+/);
-
-    // Extraire les headings avec leur position (before replacing markers)
-    this.extractHeadings();
-
-    // Replace line break markers with actual line breaks for display
-    this.words = this.words.map(word =>
-      word === '§§LINEBREAK§§' ? '\n' : word
-    );
-
-    // Use word index if provided (priority)
-    if (startWordIndex !== undefined) {
-      this.currentIndex = Math.max(0, Math.min(startWordIndex, this.words.length - 1));
-    } else if (startPosition !== undefined && startPosition > 0) {
-      // Fallback: calculate from position (deprecated)
-      const textUpToCursor = text.substring(0, startPosition);
-      const wordsBeforeCursor = textUpToCursor.trim().split(/\s+/).length;
-      this.currentIndex = Math.min(wordsBeforeCursor, this.words.length - 1);
-    } else {
-      this.currentIndex = 0;
-    }
+  updateSettings(settings: QuickReaderSettings): void {
+    this.settings = settings;
   }
 
+  /**
+   * Loads text into the engine and parses structure
+   */
+  loadText(words: string[], headings: HeadingInfo[] = [], paragraphs: Paragraph[] = []): void {
+    this.words = words;
+    this.headings = headings;
+    this.paragraphs = paragraphs;
+    this.currentIndex = 0;
+    this.isPlaying = false;
+    this.startTime = 0;
+    this.totalPausedTime = 0;
+  }
+
+  getWords(): string[] {
+    return this.words;
+  }
+
+  /**
+   * Starts playback
+   */
   play(): void {
     if (this.isPlaying) return;
-    if (this.currentIndex >= this.words.length) {
-      this.currentIndex = 0;
-    }
-
     this.isPlaying = true;
-
-    // Initialize start time and starting WPM
-    if (this.startTime === 0) {
-      this.startTime = Date.now();
-      this.startWpm = this.settings.wpm;
-      this.wordsReadInSession = 0; // Reset slow start counter
-    } else if (this.lastPauseTime > 0) {
-      // If resuming after a pause, add pause time
-      this.pausedTime += Date.now() - this.lastPauseTime;
-      this.lastPauseTime = 0;
-    }
-
-    this.displayNextWord();
+    this.startTime = Date.now() - this.totalPausedTime;
+    this.scheduleNextWord();
   }
 
+  /**
+   * Pauses playback
+   */
   pause(): void {
+    if (!this.isPlaying) return;
     this.isPlaying = false;
-    if (this.timer !== null) {
-      this.timeoutManager.clearTimeout(this.timer);
+    this.pauseTime = Date.now();
+    if (this.timer) {
+      clearTimeout(this.timer);
       this.timer = null;
     }
-    // Record pause time
-    this.lastPauseTime = Date.now();
   }
 
-  stop(): void {
-    this.pause();
-    this.currentIndex = 0;
-    // Reset timings
-    this.startTime = 0;
-    this.pausedTime = 0;
-    this.lastPauseTime = 0;
-    this.startWpm = 0;
-    this.wordsReadInSession = 0; // Reset slow start counter
+  /**
+   * Toggle play/pause
+   */
+  toggle(): void {
+    if (this.isPlaying) this.pause();
+    else this.play();
   }
 
-  reset(): void {
-    this.stop();
-  }
-
-  rewind(steps: number = 10): void {
-    this.currentIndex = Math.max(0, this.currentIndex - steps);
+  /**
+   * Jump to specific index or heading
+   */
+  jumpTo(index: number): void {
+    this.currentIndex = Math.max(0, Math.min(index, this.words.length - 1));
+    this.notifyWord();
+    
+    // Reset timer if playing to prevent loop doubling and immediately sync to new position
     if (this.isPlaying) {
-      this.pause();
-      this.play();
-    } else {
-      this.displayCurrentWord();
+      if (this.timer) clearTimeout(this.timer);
+      this.scheduleNextWord();
     }
   }
 
-  forward(steps: number = 10): void {
-    this.currentIndex = Math.min(this.words.length - 1, this.currentIndex + steps);
-    if (this.isPlaying) {
-      this.pause();
-      this.play();
-    } else {
-      this.displayCurrentWord();
-    }
-  }
-
-  private displayCurrentWord(): void {
-    if (this.currentIndex >= this.words.length) {
-      return;
-    }
-
-    const chunk = this.getChunk(this.currentIndex);
-    this.onWordChange(chunk);
-  }
-
-  private displayNextWord(): void {
+  /**
+   * Main scheduling loop
+   */
+  private scheduleNextWord(): void {
+    if (this.timer) clearTimeout(this.timer); // Defensive clear
+    
     if (!this.isPlaying || this.currentIndex >= this.words.length) {
-      if (this.currentIndex >= this.words.length) {
-        this.isPlaying = false;
-        this.onComplete();
-      }
+      this.isPlaying = false;
       return;
     }
 
-    const chunk = this.getChunk(this.currentIndex);
-    this.onWordChange(chunk);
-
-    let delay = this.calculateDelay(chunk.text);
-
-    // Slow start: gradually increase speed over first 5 words (if enabled)
-    // Inspired by Stutter: ease into reading to avoid jarring start
-    if (this.settings.enableSlowStart) {
-      const SLOW_START_WORDS = 5;
-      if (this.wordsReadInSession < SLOW_START_WORDS) {
-        const remainingSlowWords = SLOW_START_WORDS - this.wordsReadInSession;
-        const slowStartMultiplier = 1 + (remainingSlowWords / SLOW_START_WORDS);
-        delay *= slowStartMultiplier;
-      }
-    }
-
-    this.wordsReadInSession++;
-    this.currentIndex += this.settings.chunkSize;
-
-    this.timer = this.timeoutManager.setTimeout(() => {
-      this.displayNextWord();
+    const delay = this.calculateDelay();
+    this.notifyWord();
+    
+    this.timer = window.setTimeout(() => {
+      this.currentIndex++;
+      this.scheduleNextWord();
     }, delay);
   }
 
-  private getChunk(startIndex: number): WordChunk {
-    const endIndex = Math.min(
-      startIndex + this.settings.chunkSize,
-      this.words.length
+  /**
+   * calculates delay based on WPM, word length, and punctuation
+   */
+  private calculateDelay(): number {
+    const wpm = Math.max(10, this.settings.wpm); // Prevent Div by Zero
+    let currentWpm = wpm;
+
+    // Acceleration Logic
+    if (this.settings.enableAcceleration && this.isPlaying) {
+      const elapsed = this.getElapsedTime();
+      if (elapsed < this.settings.accelerationDuration) {
+        const progress = elapsed / this.settings.accelerationDuration;
+        currentWpm = this.settings.wpm + (this.settings.accelerationTargetWpm - this.settings.wpm) * progress;
+      } else {
+        currentWpm = this.settings.accelerationTargetWpm;
+      }
+    }
+
+    const baseDelay = 60000 / currentWpm;
+    const currentWord = this.words[this.currentIndex];
+    
+    if (!this.settings.enableMicropause) return baseDelay;
+
+    let multiplier = 1.0;
+
+    // Punctuation Factor
+    if (/[.!?]$/.test(currentWord)) {
+      multiplier *= this.settings.micropausePunctuation;
+    } else if (/[,;:]$/.test(currentWord)) {
+      multiplier *= this.settings.micropauseOtherPunctuation;
+    }
+
+    // Long Word Factor
+    if (currentWord.length > 8) {
+      multiplier *= this.settings.micropauseLongWords;
+    }
+
+    // Heading/Structure Factor
+    const isHeadingWord = this.headings.some(h => 
+      this.currentIndex >= h.wordIndex && 
+      this.currentIndex < h.wordIndex + (h.wordLength || 0)
     );
-
-    const chunkWords = this.words.slice(startIndex, endIndex);
-    const text = chunkWords.join(' ');
-
-    return {
-      text,
-      index: startIndex,
-      delay: this.calculateDelay(text),
-      isEnd: endIndex >= this.words.length,
-      headingContext: this.getCurrentHeadingContext(startIndex)
-    };
-  }
-
-  private getCurrentWpm(): number {
-    // If acceleration is not enabled, return normal WPM
-    if (!this.settings.enableAcceleration || this.startTime === 0) {
-      return this.settings.wpm;
+    if (isHeadingWord) {
+      multiplier *= this.settings.micropauseSectionMarkers;
     }
-
-    // Calculate elapsed time (in seconds)
-    const elapsed = (Date.now() - this.startTime - this.pausedTime) / 1000;
-
-    // If acceleration duration reached, return target WPM
-    if (elapsed >= this.settings.accelerationDuration) {
-      return this.settings.accelerationTargetWpm;
-    }
-
-    // Calculate progressive WPM
-    const progress = elapsed / this.settings.accelerationDuration;
-    const wpmDiff = this.settings.accelerationTargetWpm - this.startWpm;
-    const currentWpm = this.startWpm + (wpmDiff * progress);
-
-    return Math.round(currentWpm);
-  }
-
-  private calculateDelay(text: string): number {
-    const currentWpm = this.getCurrentWpm();
-    const baseDelay = (60 / currentWpm) * 1000;
-
-    // Calculate micropause multiplier using service
-    const multiplier = this.micropauseService.calculateMultiplier(text);
 
     return baseDelay * multiplier;
   }
 
   /**
-   * Extract all headings and callouts from the words array
-   * Headings are marked with [H1], [H2], etc.
-   * Callouts are marked with [CALLOUT:type] by the markdown parser
-   *
-   * Since text is split into words, we need to collect all words
-   * that belong to the same heading/callout title.
+   * Notifies the UI about a word change
    */
-  private extractHeadings(): void {
-    this.headings = [];
+  private notifyWord(): void {
+    const text = this.words[this.currentIndex];
+    const isEnd = this.currentIndex >= this.words.length - 1;
+    
+    const breadcrumb = this.getHeadingBreadcrumb(this.currentIndex);
+    const paragraph = this.paragraphs.find(p => 
+      this.currentIndex >= p.wordStartIndex && this.currentIndex <= p.wordEndIndex
+    );
 
-    for (let i = 0; i < this.words.length; i++) {
-      const word = this.words[i];
+    const activeHeading = this.headings.find(h => 
+      this.currentIndex >= h.wordIndex && 
+      this.currentIndex < h.wordIndex + (h.wordLength || 0)
+    );
 
-      // Check for regular headings [H1], [H2], etc.
-      const headingMatch = word.match(/^\[H(\d)\](.+)/);
-      if (headingMatch) {
-        const level = parseInt(headingMatch[1]);
-        const firstWord = headingMatch[2];
-
-        // Collect following words until we hit a line break marker
-        // Headings are single-line, so we stop at §§LINEBREAK§§
-        const titleWords = [firstWord];
-        let j = i + 1;
-        while (j < this.words.length) {
-          const nextWord = this.words[j];
-
-          // Stop if we hit the line break marker
-          if (nextWord === '§§LINEBREAK§§') {
-            break;
-          }
-
-          // Stop if we hit another marker
-          if (/^\[H\d\]/.test(nextWord) || /^\[CALLOUT:/.test(nextWord)) {
-            break;
-          }
-
-          // Add word to title
-          titleWords.push(nextWord);
-          j++;
-
-          // Safety limit: max 20 words for a heading
-          if (titleWords.length >= 20) {
-            break;
-          }
-        }
-
-        const text = titleWords.join(' ').trim();
-
-        this.headings.push({
-          level,
-          text,
-          wordIndex: i
-        });
-        continue;
+    this.onWordChange({
+      text,
+      index: this.currentIndex,
+      delay: this.calculateDelay(),
+      isEnd,
+      headingContext: {
+        breadcrumb,
+        current: breadcrumb.length > 0 ? breadcrumb[breadcrumb.length - 1] : null
+      },
+      paragraph,
+      metadata: {
+        headingLevel: activeHeading?.level,
+        calloutType: activeHeading?.calloutType
       }
+    });
+  }
 
-      // Check for callouts [CALLOUT:type]Title
-      const calloutMatch = word.match(/^\[CALLOUT:([\w-]+)\](.+)/);
-      if (calloutMatch) {
-        const calloutType = calloutMatch[1];
-        const firstWord = calloutMatch[2];
-
-        // Collect following words until we hit a line break marker
-        // Callout titles are single-line, so we stop at §§LINEBREAK§§
-        const titleWords = [firstWord];
-        let j = i + 1;
-        while (j < this.words.length) {
-          const nextWord = this.words[j];
-
-          // Stop if we hit the line break marker
-          if (nextWord === '§§LINEBREAK§§') {
-            break;
-          }
-
-          // Stop if we hit another marker
-          if (/^\[H\d\]/.test(nextWord) || /^\[CALLOUT:/.test(nextWord)) {
-            break;
-          }
-
-          // Add word to title
-          titleWords.push(nextWord);
-          j++;
-
-          // Safety limit: max 20 words for a callout title
-          if (titleWords.length >= 20) {
-            break;
-          }
-        }
-
-        const text = titleWords.join(' ').trim();
-
-        this.headings.push({
-          level: 0, // Special level for callouts
-          text,
-          wordIndex: i,
-          calloutType
-        });
+  private getHeadingBreadcrumb(wordIndex: number): HeadingInfo[] {
+    const path: HeadingInfo[] = [];
+    const activeHeadings = this.headings.filter(h => h.wordIndex <= wordIndex);
+    
+    for (const h of activeHeadings) {
+      // Maintain hierarchy (remove deeper or same-level headings)
+      while (path.length > 0 && path[path.length - 1].level >= h.level && h.level !== 0) {
+        path.pop();
       }
+      path.push(h);
     }
+    return path;
   }
 
-  /**
-   * Get the current heading context (breadcrumb) for a given word index
-   * Returns the hierarchical path of headings leading to the current position
-   *
-   * @param wordIndex - Word index to get context for
-   * @returns Heading context with breadcrumb path and current heading
-   */
-  getCurrentHeadingContext(wordIndex: number): HeadingContext {
-    if (this.headings.length === 0) {
-      return { breadcrumb: [], current: null };
-    }
-
-    // Find all headings before or at the current position
-    const relevantHeadings = this.headings.filter(h => h.wordIndex <= wordIndex);
-
-    if (relevantHeadings.length === 0) {
-      return { breadcrumb: [], current: null };
-    }
-
-    // Build hierarchical breadcrumb
-    const breadcrumb: HeadingInfo[] = [];
-    let currentLevel = 0;
-
-    for (const heading of relevantHeadings) {
-      // If this heading is at a lower or equal level than current, reset the breadcrumb up to this level
-      if (heading.level <= currentLevel) {
-        // Remove all headings from this level onwards
-        while (breadcrumb.length > 0 && breadcrumb[breadcrumb.length - 1].level >= heading.level) {
-          breadcrumb.pop();
-        }
-      }
-
-      breadcrumb.push(heading);
-      currentLevel = heading.level;
-    }
-
-    return {
-      breadcrumb,
-      current: breadcrumb[breadcrumb.length - 1] || null
-    };
-  }
-
-  getProgress(): number {
-    return this.words.length > 0
-      ? (this.currentIndex / this.words.length) * 100
-      : 0;
-  }
-
-  getCurrentIndex(): number {
-    return this.currentIndex;
-  }
-
-  getTotalWords(): number {
-    return this.words.length;
-  }
-
-  getIsPlaying(): boolean {
-    return this.isPlaying;
-  }
-
-  setWpm(wpm: number): void {
-    this.settings.wpm = Math.max(LIMITS.wpm.min, Math.min(LIMITS.wpm.max, wpm));
-  }
-
-  getWpm(): number {
-    return this.settings.wpm;
-  }
-
-  setChunkSize(size: number): void {
-    this.settings.chunkSize = Math.max(1, Math.min(5, size));
-  }
-
-  getChunkSize(): number {
-    return this.settings.chunkSize;
-  }
-
-  getContext(contextWords: number = 3): { before: string[], after: string[] } {
-    const beforeStart = Math.max(0, this.currentIndex - contextWords);
-    const afterEnd = Math.min(this.words.length, this.currentIndex + this.settings.chunkSize + contextWords);
-
-    return {
-      before: this.words.slice(beforeStart, this.currentIndex),
-      after: this.words.slice(this.currentIndex + this.settings.chunkSize, afterEnd)
-    };
-  }
-
-  updateSettings(settings: DashReaderSettings): void {
-    this.settings = settings;
-    this.micropauseService.updateSettings(settings);
-  }
-
-  getEstimatedDuration(): number {
-    // Returns estimated duration in seconds to read REMAINING words
-    // Accurate calculation with all micropauses (punctuation, long words, headings, etc.)
-    if (this.words.length === 0) return 0;
-
-    const remainingWords = Math.max(0, this.words.length - this.currentIndex);
-    if (remainingWords === 0) return 0;
-
-    const averageWpm = this.settings.enableAcceleration
-      ? (this.settings.wpm + this.settings.accelerationTargetWpm) / 2
-      : this.settings.wpm;
-
-    // Calculer le temps précis en tenant compte de toutes les micropauses
-    return this.calculateAccurateRemainingTime(averageWpm);
-  }
-
-  private calculateAccurateRemainingTime(wpm: number): number {
-    // Calculates total time in milliseconds for all remaining words
-    // taking into account ALL micropauses (punctuation, long words, headings, etc.)
-    if (this.words.length === 0 || this.currentIndex >= this.words.length) return 0;
-
-    let totalTimeMs = 0;
-    const baseDelay = (60 / wpm) * 1000; // Base delay per word in ms
-
-    for (let i = this.currentIndex; i < this.words.length; i++) {
-      const word = this.words[i];
-
-      // Calculate micropause multiplier using service
-      const multiplier = this.micropauseService.calculateMultiplier(word);
-
-      totalTimeMs += baseDelay * multiplier;
-    }
-
-    // Convert to seconds and round up
-    return Math.ceil(totalTimeMs / 1000);
-  }
-
-  getRemainingWords(): number {
-    // Returns number of remaining words to read
-    return Math.max(0, this.words.length - this.currentIndex);
-  }
-
+  // Getters
+  getCurrentIndex(): number { return this.currentIndex; }
+  getTotalWords(): number { return this.words.length; }
+  getIsPlaying(): boolean { return this.isPlaying; }
+  getHeadings(): HeadingInfo[] { return this.headings; }
+  
   getElapsedTime(): number {
-    // Returns elapsed time in seconds
     if (this.startTime === 0) return 0;
-
-    const now = this.isPlaying ? Date.now() : this.lastPauseTime || Date.now();
-    return Math.floor((now - this.startTime - this.pausedTime) / 1000);
+    const now = this.isPlaying ? Date.now() : this.pauseTime;
+    return Math.floor((now - this.startTime - this.totalPausedTime) / 1000);
   }
 
   getRemainingTime(): number {
-    // Returns estimated remaining time in seconds
-    // Accurate calculation with all micropauses (punctuation, long words, headings, etc.)
-    if (this.words.length === 0 || this.currentIndex >= this.words.length) return 0;
-
-    const currentWpm = this.getCurrentWpm();
-
-    // Calculer le temps précis en tenant compte de toutes les micropauses
-    return this.calculateAccurateRemainingTime(currentWpm);
-  }
-
-  getCurrentWpmPublic(): number {
-    // Public method to get current WPM (for display)
-    return this.getCurrentWpm();
-  }
-
-  /**
-   * Returns all headings extracted from the document
-   * Useful for navigation and section counting
-   */
-  getHeadings(): HeadingInfo[] {
-    return this.headings;
+    const total = this.words.length;
+    if (total === 0) return 0;
+    const remaining = total - this.currentIndex;
+    const baseWpm = Math.max(10, this.settings.wpm);
+    return Math.ceil(remaining / (baseWpm / 60));
   }
 }

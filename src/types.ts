@@ -1,16 +1,41 @@
-export interface DashReaderSettings {
+/**
+ * Interface for the main plugin class to break circular dependencies
+ */
+export interface IQuickReader {
+  settings: QuickReaderSettings;
+  saveSettings(): Promise<void>;
+}
+
+/**
+ * QuickReaderSettings
+ * 
+ * Comprehensive settings for the Quick Reader plugin.
+ * Refined and optimized for high-performance reading.
+ */
+export interface QuickReaderSettings {
+  // Core Speed Settings
   wpm: number;
   chunkSize: number;
+  
+  // Visual Aesthetics
   fontSize: number;
   highlightColor: string;
   backgroundColor: string;
   fontColor: string;
   fontFamily: string;
-  minimapColor: string;
+  accentColor: string;
+  
+  // UI Features
   showContext: boolean;
   contextWords: number;
   showMinimap: boolean;
   showBreadcrumb: boolean;
+  showProgress: boolean;
+  showStats: boolean;
+  showFlowText: boolean;
+  flowTextOpacity: number;
+  
+  // Advanced RSVP Logic
   enableMicropause: boolean;
   micropausePunctuation: number;
   micropauseOtherPunctuation: number;
@@ -20,75 +45,86 @@ export interface DashReaderSettings {
   micropauseSectionMarkers: number;
   micropauseListBullets: number;
   micropauseCallouts: number;
+  
+  // Automation & Flows
   autoStart: boolean;
   autoStartDelay: number;
-  showProgress: boolean;
-  showStats: boolean;
+  enableSlowStart: boolean;
+  enableAcceleration: boolean;
+  accelerationDuration: number;
+  accelerationTargetWpm: number;
+  
+  // Hotkeys
   hotkeyPlay: string;
   hotkeyRewind: string;
   hotkeyForward: string;
   hotkeyIncrementWpm: string;
   hotkeyDecrementWpm: string;
   hotkeyQuit: string;
-  enableSlowStart: boolean;
-  enableAcceleration: boolean;
-  accelerationDuration: number;
-  accelerationTargetWpm: number;
+  
+  // Theme & Immersive Features
+  enableContextExpansion: boolean;
+  expansionHotkey: string;
 }
 
-export const DEFAULT_SETTINGS: DashReaderSettings = {
-  wpm: 400, // Increased from 300 (inspired by Stutter: 400-800 range)
+export const DEFAULT_SETTINGS: QuickReaderSettings = {
+  wpm: 400,
   chunkSize: 1,
-  fontSize: 48,
+  fontSize: 52, // Slightly larger base for Quick Reader
   highlightColor: '#4a9eff',
-  backgroundColor: '#1e1e1e',
-  fontColor: '#ffffff',
-  fontFamily: 'inherit',
-  minimapColor: '#4a9eff',
+  backgroundColor: '#0f141e', // Deeper, more premium charcoal
+  fontColor: '#f5f5f5',
+  fontFamily: 'Outfit, Inter, sans-serif',
+  accentColor: '#007aff',
   showContext: false,
   contextWords: 3,
   showMinimap: true,
   showBreadcrumb: true,
-  enableMicropause: true,
-  micropausePunctuation: 2.5, // Sentence-ending punctuation (.,!?) - Stutter-inspired
-  micropauseOtherPunctuation: 1.5, // Other punctuation (;:,) - lighter pause
-  micropauseLongWords: 1.4, // Words >8 chars - Stutter-inspired
-  micropauseParagraph: 2.5, // Paragraph breaks - better section separation
-  micropauseNumbers: 1.8, // Numbers and dates - comprehension aid
-  micropauseSectionMarkers: 2.0, // Section numbers (1., I., etc.)
-  micropauseListBullets: 1.8, // List bullets (-, *, +, •)
-  micropauseCallouts: 2.0, // Obsidian callouts
-  autoStart: false,
-  autoStartDelay: 3,
   showProgress: true,
   showStats: true,
+  showFlowText: false,
+  flowTextOpacity: 0.1,
+  enableMicropause: true,
+  micropausePunctuation: 2.2,
+  micropauseOtherPunctuation: 1.4,
+  micropauseLongWords: 1.3,
+  micropauseParagraph: 2.2,
+  micropauseNumbers: 1.6,
+  micropauseSectionMarkers: 1.8,
+  micropauseListBullets: 1.6,
+  micropauseCallouts: 2.0,
+  autoStart: false,
+  autoStartDelay: 3,
+  enableSlowStart: true,
+  enableAcceleration: false,
+  accelerationDuration: 30,
+  accelerationTargetWpm: 600,
   hotkeyPlay: 'Space',
   hotkeyRewind: 'ArrowLeft',
   hotkeyForward: 'ArrowRight',
   hotkeyIncrementWpm: 'ArrowUp',
   hotkeyDecrementWpm: 'ArrowDown',
   hotkeyQuit: 'Escape',
-  enableSlowStart: true, // Enable slow start by default
-  enableAcceleration: false,
-  accelerationDuration: 30,
-  accelerationTargetWpm: 600 // Increased from 450 (Stutter suggests 600-800)
+  enableContextExpansion: true,
+  expansionHotkey: 'KeyC'
 };
 
-export interface HeadingInfo {
-  /** Heading level (1-6), or 0 for callouts */
-  level: number;
-  /** Heading text (without [H1] or [CALLOUT:type] marker) */
+export interface Paragraph {
+  wordStartIndex: number;
+  wordEndIndex: number;
   text: string;
-  /** Word index where this heading appears */
+}
+
+export interface HeadingInfo {
+  level: number;
+  text: string;
   wordIndex: number;
-  /** Callout type if this is a callout (note, abstract, info, etc.) */
+  wordLength?: number;
   calloutType?: string;
 }
 
 export interface HeadingContext {
-  /** Breadcrumb path from H1 to current heading */
   breadcrumb: HeadingInfo[];
-  /** Current heading (last item in breadcrumb) */
   current: HeadingInfo | null;
 }
 
@@ -97,13 +133,12 @@ export interface WordChunk {
   index: number;
   delay: number;
   isEnd: boolean;
-  /** Current heading context (breadcrumb) - optional */
   headingContext?: HeadingContext;
-}
-
-export interface ReadingStats {
-  wordsRead: number;
-  timeSpent: number;
-  sessionsCount: number;
-  averageWpm: number;
+  paragraph?: Paragraph;
+  metadata?: {
+    headingLevel?: number;
+    calloutType?: string;
+    showSeparator?: boolean;
+    cleanText?: string;
+  };
 }

@@ -1,265 +1,140 @@
-import { RSVPEngine } from './rsvp-engine';
 import { HeadingInfo } from './types';
-import { TimeoutManager } from './services/timeout-manager';
-import { CSS_CLASSES } from './constants';
+import { RSVPEngine } from './rsvp-engine';
 
 /**
- * MinimapManager
- *
- * Manages the vertical minimap navigation that provides:
- * - Visual overview of document structure
- * - Quick navigation to any heading
- * - Current position indicator with subtle glow
- * - Ultra-discreet design (low opacity, increases on hover)
- *
- * Design Philosophy:
- * - Distraction-free: opacity 0.15 by default
- * - Visual hierarchy: H1=large, H2=medium, H3=small points
- * - Always visible but nearly invisible
- * - Instant navigation on click
+ * MinimapManager (Zen v2.0)
+ * 
+ * A high-fidelity, hierarchical navigation system.
+ * Rebuilt from scratch to support sliding tooltips, structural mapping,
+ * and smart orientation navigation.
  */
 export class MinimapManager {
-  private containerEl: HTMLElement;
-  private minimapEl: HTMLElement;
-  private progressEl: HTMLElement;
-  private tooltipEl: HTMLElement;
+  private container: HTMLElement;
   private engine: RSVPEngine;
-  private timeoutManager: TimeoutManager;
-  private currentWordIndex: number = 0;
-  private totalWords: number = 0;
-  private settings: any; // Using any to avoid circularity if needed, but DashReaderSettings is better
+  private progressBar: HTMLElement | null = null;
+  private tooltip: HTMLElement | null = null;
+  private points: HTMLElement[] = [];
+  private headings: HeadingInfo[] = [];
 
-  constructor(containerEl: HTMLElement, engine: RSVPEngine, timeoutManager: TimeoutManager, settings: any) {
-    this.containerEl = containerEl;
+  constructor(container: HTMLElement, engine: RSVPEngine) {
+    this.container = container;
     this.engine = engine;
-    this.timeoutManager = timeoutManager;
-    this.settings = settings;
+    this.init();
+  }
 
-    // Initialize minimap structure immediately (no null as any!)
-    // Create minimap container
-    this.minimapEl = this.containerEl.createDiv({
-      cls: 'dashreader-minimap'
-    });
+  private init(): void {
+    // 1. Progress track
+    this.progressBar = this.container.createDiv({ cls: 'qr-minimap-progress' });
+    
+    // 2. Sliding Tooltip (created off-screen)
+    this.tooltip = document.body.createDiv({ cls: 'qr-minimap-tooltip' });
+  }
 
-    // Create progress indicator (fills from top)
-    this.progressEl = this.minimapEl.createDiv({
-      cls: 'dashreader-minimap-progress'
-    });
+  /**
+   * Renders the note hierarchy on the minimap SPINE
+   */
+  render(headings: HeadingInfo[], totalWords: number): void {
+    // Fast clear
+    this.points.forEach(p => p.remove());
+    this.points = [];
+    this.headings = headings;
 
-    // Create vertical line (purely visual, no need to store reference)
-    this.minimapEl.createDiv({
-      cls: 'dashreader-minimap-line'
-    });
+    if (totalWords === 0) return;
 
-    // Create tooltip (slides from right on hover)
-    this.tooltipEl = document.body.createDiv({
-      cls: 'dashreader-minimap-tooltip'
+    headings.forEach((h, index) => {
+      const point = this.container.createDiv({ cls: 'qr-minimap-point' });
+      const percentage = (h.wordIndex / totalWords) * 100;
+      point.style.top = `${percentage}%`;
+      
+      // Structural hierarchy attributes
+      point.setAttr('data-level', h.level);
+      
+      // Interactive events
+      point.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.smartJump(h.wordIndex);
+      });
+
+      point.addEventListener('mouseenter', () => this.showTooltip(h.text, point));
+      point.addEventListener('mouseleave', () => this.hideTooltip());
+
+      this.points.push(point);
     });
   }
 
   /**
-   * Render the minimap with heading points
-   * Called when text is loaded or structure changes
+   * Jumps to word and provides a brief orientation pause
    */
-  render(): void {
-    if (!this.minimapEl) return;
+  private smartJump(wordIndex: number): void {
+    const wasPlaying = this.engine.getIsPlaying();
+    if (wasPlaying) this.engine.pause();
+    
+    this.engine.jumpTo(wordIndex);
+    
+    // Resume after 400ms "Orientation Pause"
+    if (wasPlaying) {
+      setTimeout(() => {
+        this.engine.play();
+      }, 400);
+    }
+  }
 
-    // Clear existing points (keep the line)
-    const existingPoints = this.minimapEl.querySelectorAll('.dashreader-minimap-point');
-    existingPoints.forEach(point => point.remove());
+  private showTooltip(text: string, pointEl: HTMLElement): void {
+    if (!this.tooltip) return;
+    
+    this.tooltip.setText(text);
+    
+    // Vertical alignment
+    const rect = pointEl.getBoundingClientRect();
+    const tooltipHeight = this.tooltip.offsetHeight || 30;
+    this.tooltip.style.top = `${rect.top + (rect.height / 2) - (tooltipHeight / 2)}px`;
+    
+    this.tooltip.classList.add('is-visible');
+  }
 
-    const headings = this.engine.getHeadings();
-    this.totalWords = this.engine.getTotalWords();
+  private hideTooltip(): void {
+    if (this.tooltip) this.tooltip.classList.remove('is-visible');
+  }
 
-    if (headings.length === 0 || this.totalWords === 0) {
-      this.minimapEl.toggleClass(CSS_CLASSES.hidden, true);
+  private activeHeadingIndex: number = -1;
+
+  /**
+   * Frame-perfect progress update
+   */
+  update(currentIndex: number, totalWords: number): void {
+    if (!this.progressBar || totalWords <= 0) {
+      if (this.progressBar) this.progressBar.style.height = '0%';
       return;
     }
+    
+    // 1. Smoothly update progress bar
+    const percentage = (currentIndex / totalWords) * 100;
+    this.progressBar.style.height = `${percentage}%`;
 
-    this.minimapEl.toggleClass(CSS_CLASSES.hidden, false);
-
-    // Create points for each heading
-    headings.forEach((heading, index) => {
-      this.createPoint(heading, index);
-    });
-
-    // Update current position
-    this.updateCurrentPosition(this.currentWordIndex);
-  }
-
-  /**
-   * Create a point for a heading
-   */
-  private createPoint(heading: HeadingInfo, index: number): void {
-    const point = this.minimapEl.createDiv({
-      cls: 'dashreader-minimap-point'
-    });
-
-    // Position proportionally based on word index
-    const percentage = (heading.wordIndex / this.totalWords) * 100;
-    point.style.top = `${percentage}%`;
-
-    // Size based on heading level (H1 largest, H6 smallest)
-    point.setAttribute('data-level', heading.level.toString());
-    point.setAttribute('data-index', index.toString());
-    point.setAttribute('data-word-index', heading.wordIndex.toString());
-
-    // Store heading text for tooltip
-    point.setAttribute('data-heading-text', heading.text);
-
-    // Click handler - navigate to heading
-    point.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.navigateToHeading(heading.wordIndex);
-    });
-
-    // Hover handlers - show tooltip sliding from right
-    point.addEventListener('mouseenter', () => {
-      this.showTooltip(heading.text, point);
-    });
-
-    point.addEventListener('mouseleave', () => {
-      this.hideTooltip();
-    });
-  }
-
-  /**
-   * Update which point is highlighted as current
-   */
-  updateCurrentPosition(wordIndex: number): void {
-    this.currentWordIndex = wordIndex;
-
-    if (!this.minimapEl) return;
-
-    // Update progress indicator
-    if (this.progressEl && this.totalWords > 0) {
-      const progressPercentage = (wordIndex / this.totalWords) * 100;
-      this.progressEl.style.height = `${Math.min(100, Math.max(0, progressPercentage))}%`;
-      
-      // Apply custom color if set
-      if (this.settings?.minimapColor) {
-        this.progressEl.style.background = this.settings.minimapColor;
-      }
+    // 2. High-performance section highlight (Dirty Checking)
+    // Find active heading from bottom up for efficiency
+    let newIndex = -1;
+    for (let i = this.headings.length - 1; i >= 0; i--) {
+        if (currentIndex >= this.headings[i].wordIndex) {
+            newIndex = i;
+            break;
+        }
     }
 
-    // Find the current heading (last heading before or at current position)
-    const headings = this.engine.getHeadings();
-    if (headings.length === 0) return;
-
-    const relevantHeadings = headings.filter(h => h.wordIndex <= wordIndex);
-    const currentHeading = relevantHeadings.length > 0
-      ? relevantHeadings[relevantHeadings.length - 1]
-      : null;
-
-    // Update all points
-    const points = this.minimapEl.querySelectorAll('.dashreader-minimap-point');
-    points.forEach((point) => {
-      const pointWordIndex = parseInt(point.getAttribute('data-word-index') || '0');
-
-      if (currentHeading && pointWordIndex === currentHeading.wordIndex) {
-        point.classList.add('dashreader-minimap-point-current');
-      } else {
-        point.classList.remove('dashreader-minimap-point-current');
-      }
-    });
-  }
-
-  /**
-   * Navigate to a specific heading
-   */
-  private navigateToHeading(wordIndex: number): void {
-    const wasPlaying = this.engine.getIsPlaying();
-
-    if (wasPlaying) {
-      this.engine.pause();
-    }
-
-    // Use the engine's jump functionality (via rewind/forward)
-    const currentIndex = this.engine.getCurrentIndex();
-    const delta = wordIndex - currentIndex;
-
-    if (delta < 0) {
-      this.engine.rewind(Math.abs(delta));
-    } else if (delta > 0) {
-      this.engine.forward(delta);
-    }
-
-    // Resume reading after a short delay (gives user time to see the jump)
-    if (wasPlaying) {
-      this.timeoutManager.setTimeout(() => {
-        this.engine.play();
-      }, 300);
+    if (newIndex !== this.activeHeadingIndex) {
+        // Toggle OLD
+        if (this.activeHeadingIndex !== -1 && this.points[this.activeHeadingIndex]) {
+            this.points[this.activeHeadingIndex].classList.remove('is-active');
+        }
+        // Toggle NEW
+        if (newIndex !== -1 && this.points[newIndex]) {
+            this.points[newIndex].classList.add('is-active');
+        }
+        this.activeHeadingIndex = newIndex;
     }
   }
 
-  /**
-   * Show tooltip with heading text (slides from right)
-   */
-  private showTooltip(text: string, pointEl: HTMLElement): void {
-    if (!this.tooltipEl) return;
-
-    // Remove heading markers and callout markers
-    const cleanText = text
-      .replace(/^\[H\d\]/, '')
-      .replace(/^\[CALLOUT:[\w-]+\]/, '')
-      .trim();
-
-    this.tooltipEl.textContent = cleanText;
-
-    // Position tooltip vertically aligned with point
-    const pointRect = pointEl.getBoundingClientRect();
-    const tooltipHeight = 32; // Approximate height
-    this.tooltipEl.style.top = `${pointRect.top + (pointRect.height / 2) - (tooltipHeight / 2)}px`;
-
-    // Add visible class to trigger slide animation
-    this.tooltipEl.classList.add('visible');
-  }
-
-  /**
-   * Hide tooltip
-   */
-  private hideTooltip(): void {
-    if (!this.tooltipEl) return;
-    this.tooltipEl.classList.remove('visible');
-  }
-
-  /**
-   * Show the minimap
-   */
-  show(): void {
-    if (this.minimapEl) {
-      this.minimapEl.toggleClass(CSS_CLASSES.hidden, false);
-    }
-  }
-
-  /**
-   * Hide the minimap
-   */
-  hide(): void {
-    if (this.minimapEl) {
-      this.minimapEl.toggleClass(CSS_CLASSES.hidden, true);
-    }
-  }
-
-  /**
-   * Update settings
-   */
-  updateSettings(settings: any): void {
-    this.settings = settings;
-    if (this.progressEl && settings.minimapColor) {
-      this.progressEl.style.background = settings.minimapColor;
-    }
-  }
-
-  /**
-   * Clean up
-   */
   destroy(): void {
-    if (this.minimapEl) {
-      this.minimapEl.remove();
-    }
-    if (this.tooltipEl) {
-      this.tooltipEl.remove();
-    }
+    if (this.tooltip) this.tooltip.remove();
   }
 }

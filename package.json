@@ -1,36 +1,28 @@
 {
-  "name": "dashreader",
-  "version": "1.4.3",
-  "description": "Speed reading with RSVP (Rapid Serial Visual Presentation) - Read faster, understand better.",
+  "name": "obsidian-quick-reader",
+  "version": "1.0.0",
+  "description": "High-performance Zen speed reading modal for Obsidian.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-    "version": "node version-bump.mjs && git add manifest.json versions.json",
-    "lint": "eslint . --ext .ts",
-    "lint:fix": "eslint . --ext .ts --fix"
+    "build": "npx tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
   },
   "keywords": [
     "obsidian",
     "plugin",
     "speed-reading",
-    "rsvp"
+    "rsvp",
+    "zen"
   ],
-  "author": "DashReader Team",
+  "author": "Quick Reader Team",
   "license": "MIT",
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
-    "@types/node": "^16.11.6",
-    "@typescript-eslint/eslint-plugin": "5.29.0",
-    "@typescript-eslint/parser": "5.29.0",
-    "@typescript-eslint/utils": "^8.46.3",
+    "@types/node": "^16.18.126",
     "builtin-modules": "3.3.0",
-    "esbuild": "0.17.3",
-    "eslint": "^9.39.1",
-    "eslint-plugin-obsidianmd": "^0.1.7",
-    "obsidian": "latest",
-    "tslib": "2.4.0",
-    "typescript": "^5.7.2",
-    "typescript-eslint": "^8.46.3"
+    "esbuild": "^0.17.3",
+    "obsidian": "^1.12.3",
+    "tslib": "^2.4.0",
+    "typescript": "^5.9.3"
   }
 }
